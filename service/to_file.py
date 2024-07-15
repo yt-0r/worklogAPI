@@ -1,0 +1,9 @@
+import json
+
+
+class JsonFile:
+    @staticmethod
+    def record(data: list, file_name='.json'):
+        # Запись данных в файл JSON
+        with open(file_name, 'w', encoding='utf-8') as json_file:
+            json.dump(data, json_file, ensure_ascii=False, indent=2)
