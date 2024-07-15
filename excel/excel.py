@@ -14,7 +14,7 @@ import openpyxl
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 import requests
-from config import settings
+from config import Settings
 from service.to_jira import Jira
 
 pd.set_option('display.max_rows', 2000)
@@ -22,25 +22,26 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.max_colwidth', None)
 pd.set_option('expand_frame_repr', False)
 pd.options.mode.chained_assignment = None
+settings: Settings
 
 
 class Excel:
     days_types = {}
     correction_list = []
 
-    jira_server = settings.JIRA_SERVER
-
     @classmethod
-    def create_excel(cls, months_years: dict):
+    def create_excel(cls, months_years: dict, server: str):
+        global settings
+        settings = Settings(_env_file=f'{server}.env')
 
         years = list(set(months_years.values()))
         for year in years:
             months = [i for i, j in months_years.items() if j == year]
-            cls.insert_month(name=f'{settings.DOC_PATH}{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}', year=year,
+            cls.insert_months(name=f'{settings.DOC_PATH}{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}', year=year,
                              months=months)
 
     @classmethod
-    def insert_month(cls, name: str, year: int, months: list):
+    def insert_months(cls, name: str, year: int, months: list):
 
         data = pd.DataFrame(SyncORM.select_year(ClockJS, year))
         data = pd.DataFrame(data)
@@ -143,11 +144,11 @@ class Excel:
                     cls.correction_list.append((count_shift + 1, ins['work_calendar_day'] + 8))
 
                 # Гиперссылка на карточку сотрудника
-                hyperlink_name = (f'=HYPERLINK("{cls.jira_server}/issues/?jql=summary~%27{ins['job_name']}%27", '
+                hyperlink_name = (f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=summary~%27{ins['job_name']}%27", '
                                   f'"{ins['job_name']}")')
 
                 # Гиперссылка на карточку отдела
-                hyperlink_department = (f'=HYPERLINK("{cls.jira_server}/issues/?jql=status=Трудоустройство and '
+                hyperlink_department = (f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=status=Трудоустройство and '
                                         f'cf[14829]=%27{ins['job_department']}%27", "{ins['job_department']}")')
 
                 # Ставим гиперссылку имени на строку с базовым контрактом
@@ -166,25 +167,25 @@ class Excel:
                 if (ins['event'] in ['shift', 'trip', 'permit', 'correction'] and ins['work_time'] > 0
                         and ins['work_calendar_daytype'] == 0 and ins['kontrakt_filter'] != '0'
                         and ins['kontrakt_timetracking'] > 0):
-                    value = (f'=HYPERLINK("{cls.jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
+                    value = (f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
                              f'{ins['kontrakt_timetracking']})')
 
                 # Выставляем shift по заявке в выходной день, если есть filter и worktime > 0.
                 # Например: сменщик работает в воскресенье и выполнял заявки
                 elif (ins['event'] == 'shift' and ins['work_time'] > 0 and ins['work_calendar_daytype'] == 1
                       and ins['kontrakt_filter'] != '0' and ins['kontrakt_timetracking'] > 0):
-                    value = (f'=HYPERLINK("{cls.jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
+                    value = (f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
                              f'{ins['kontrakt_timetracking']})')
 
                 # Выставляем командировку на выходных. Если у человека командировка захватывает выходные,
                 # то это считается выходным, но человек всё еще в командировке, так что нам необходима тут гиперссылка
                 elif ins['event'] == 'trip' and ins['work_calendar_daytype'] == 1:
-                    value = f'=HYPERLINK("{cls.jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "В")'
+                    value = f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", "В")'
                     weekend_flag = False
 
                 # Выставляем permit в выходной день
                 elif ins['event'] == 'permit' and ins['work_calendar_daytype'] == 1:
-                    value = (f'=HYPERLINK("{cls.jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
+                    value = (f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
                              f'{ins['kontrakt_timetracking']})')
 
                 # Если событие - корректировка и work_time == 0, то значит человек не явился на работу, ставим Н
@@ -193,11 +194,11 @@ class Excel:
 
                 # Ставим отпуск с гиперссылкой на DOCCORP
                 elif ins['event'] == 'otpusk':
-                    value = f'=HYPERLINK("{cls.jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "О")'
+                    value = f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", "О")'
 
                 # Ставим отгул с гиперссылкой на DOCCORP
                 elif ins['event'] == 'compensatory':
-                    value = f'=HYPERLINK("{cls.jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "От")'
+                    value = f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", "От")'
 
                 # Ставим Б, если событие больничный
                 elif ins['event'] == 'hospital':

@@ -8,6 +8,7 @@ import json
 from fastapi import FastAPI, applications
 from fastapi.openapi.docs import get_swagger_ui_html
 from pydantic import ValidationError
+from pydantic_settings import BaseSettings
 from requests.auth import HTTPBasicAuth
 from sqlalchemy.exc import ProgrammingError
 
@@ -22,7 +23,9 @@ from models.database_model import RawJS, ClockJS
 from excel.excel import Excel
 from logic.calculate import Calculator
 import pandas as pd
-from config import settings
+
+
+# from config import settings
 
 
 def swagger_monkey_patch(*args, **kwargs):
@@ -38,19 +41,26 @@ app = FastAPI(
     title='test'
 )
 
+from config import Settings
+
+settings: Settings
+
 
 @app.get('/worklog')
 def worklog(date: str, server: str):
+    global settings
+    settings = Settings(_env_file=f'{server}.env')
+
     requests.get(f'{settings.SERVICE_REST}/service/log/set')
 
-    json_normalized = json.loads(requests.get(f'{settings.SERVICE_REST}/logic/normalize?options={date}').text)
-    json_calculated = json.loads(requests.post(f'{settings.SERVICE_REST}/logic/calculate', json=json_normalized).text)
+    json_normalized = json.loads(requests.get(f'{settings.SERVICE_REST}/logic/normalize?date={date}&server={server}').text)
+    json_calculated = json.loads(requests.post(f'{settings.SERVICE_REST}/logic/calculate?server={server}', json=json_normalized).text)
 
     months = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])['period_month'].to_list()
     years = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])['period_year'].to_list()
     months_years = dict(zip(months, years))
 
-    requests.post(f'{settings.SERVICE_REST}/create_exel', json=months_years)
+    requests.post(f'{settings.SERVICE_REST}/create_exel?server={server}', json=months_years)
     return 'create excel!'
 
 
@@ -61,14 +71,14 @@ def service_log_set():
 
 
 @app.get('/logic/normalize', response_model=List[Workers])
-def normalize(options: str):
+def normalize(date: str, server: str):
     try:
-        rest = settings.JIRA_REST + options
+        rest = settings.JIRA_REST + date
         response = requests.get(rest, auth=HTTPBasicAuth(settings.ZABBIX_USER, settings.ZABBIX_PASSWORD))
         json_jira = json.loads(response.text)
 
         Normalize.data = json_jira
-        json_normalized = Normalize.js_to_norm()
+        json_normalized = Normalize.js_to_norm(server)
 
         json_valid = list(map(lambda i: Workers.model_validate(i).__dict__, json_normalized))
 
@@ -76,7 +86,7 @@ def normalize(options: str):
         requests.post(f'{settings.SERVICE_REST}/service/file?name=raw.json', json=json_valid)
 
         # пишем в raw
-        requests.post(f'{settings.SERVICE_REST}/database/raw', json=json_valid)
+        requests.post(f'{settings.SERVICE_REST}/database/raw?server={server}', json=json_valid)
 
         return json_valid
 
@@ -94,17 +104,17 @@ def normalize(options: str):
 
 
 @app.post('/create_exel')
-def excel(months: Dict[str, int]):
-    Excel.create_excel(months)
+def excel(server: str, months: Dict[str, int]):
+    Excel.create_excel(months, server)
     return 'Ok!'
 
 
 @app.post('/logic/calculate', response_model=List[Workers])
-def calc(data: List[Workers]):
+def calc(server: str, data: List[Workers]):
     json_to_calc = [i.__dict__ for i in data]
     json_calculated = Calculator.calc_workers(json_to_calc)
     requests.post(f'{settings.SERVICE_REST}/service/file?name=calculated.json', json=json_calculated)
-    requests.post(f'{settings.SERVICE_REST}/database/clock', json=json_calculated)
+    requests.post(f'{settings.SERVICE_REST}/database/clock?server={server}', json=json_calculated)
     return json_calculated
 
 
@@ -123,7 +133,7 @@ def service_file(data: List[Workers], name: Union[str, None] = '.json'):
 
 
 @app.post('/database/{name}')
-def database(name: str, data: List[Workers]):
+def database(name: str, server: str, data: List[Workers]):
     try:
         data_from_json = [i.__dict__ for i in data]
 
@@ -133,9 +143,6 @@ def database(name: str, data: List[Workers]):
         if name == 'clock':
             model = ClockJS
 
-        else:
-            model = None
-
         try:
             data_from_database = SyncORM.select_data(data_from_json, model)
         except ProgrammingError:
@@ -144,7 +151,7 @@ def database(name: str, data: List[Workers]):
             data_from_database = []
 
         # соединяем данные с json и базы
-        data_json_database = JsonManager.merge(data_from_json, data_from_database)
+        data_json_database = JsonManager.merge(data_from_json, data_from_database, server)
 
         # группируем
         group_data_json_database = JsonManager.group(data_json_database)
@@ -161,7 +168,7 @@ def database(name: str, data: List[Workers]):
         # пишем лог
         requests.get(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Update data in {name} database - OK!')
-        return 'ok!'
+        return 'OK!'
 
     except Exception as er:
         requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')

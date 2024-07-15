@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import requests
 
-from config import settings
+from config import Settings
 
 
 class Normalize:
@@ -61,7 +61,10 @@ class Normalize:
     merge_method = 'cross'
 
     @classmethod
-    def js_to_norm(cls):
+    def js_to_norm(cls, server):
+
+        settings = Settings(_env_file=f'{server}.env')
+
         try:
             if len(cls.list_path) == 0:
                 df_json = pd.json_normalize(cls.data, meta=cls.list_meta, sep='_', errors="ignore")

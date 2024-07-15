@@ -4,12 +4,15 @@ from json import dumps, loads
 import pandas as pd
 import requests
 
-from config import settings
+from config import Settings
 
 
 class JsonManager:
     @staticmethod
-    def merge(data_from_json, data_from_database):
+    def merge(data_from_json, data_from_database, server):
+
+        settings = Settings(_env_file=f'{server}.env')
+
         try:
             df_from_json = pd.DataFrame(data_from_json)
 
@@ -33,7 +36,6 @@ class JsonManager:
                                      'job_department',
                                      'job_position', 'period_month', 'period_year', 'kontrakt_name', 'kontrakt_type',
                                      'kontrakt_issuecount', 'kontrakt_filter'], indicator='ind', how='outer')
-
 
             merge_both_and_left = (raw_merge.loc[raw_merge['ind'] != 'right_only']
                                    .rename(columns=

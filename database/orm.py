@@ -3,7 +3,7 @@ import logging
 import requests
 from sqlalchemy import select, delete
 
-from config import settings
+
 from database.sql import sync_engine, sync_session_factory, Base
 
 import pandas as pd
