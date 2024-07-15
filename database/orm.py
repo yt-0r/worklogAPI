@@ -2,9 +2,9 @@ import logging
 
 import requests
 from sqlalchemy import select, delete
+from sqlalchemy.orm import sessionmaker
 
-
-from database.sql import sync_engine, sync_session_factory, Base
+from database.sql import sql_set, Base
 
 import pandas as pd
 
@@ -13,7 +13,8 @@ import hashlib
 
 class SyncORM:
     @staticmethod
-    def insert_data(data, model):
+    def insert_data(data, model, server):
+        sync_session_factory = sessionmaker(sql_set(server=server))
         with sync_session_factory() as session:
             workers = [model(
                 id=hashlib.md5((json[0]['job_name'] + ' ' +
@@ -33,13 +34,14 @@ class SyncORM:
             session.commit()
 
     @staticmethod
-    def create_table():
-        Base.metadata.create_all(sync_engine)
+    def create_table(server):
+
+        Base.metadata.create_all(sql_set(server))
 
     @staticmethod
-    def delete_data(data, model):
+    def delete_data(data, model, server):
         dataframe_from_json = pd.DataFrame(data)
-
+        sync_session_factory = sessionmaker(sql_set(server=server))
         with sync_session_factory() as session:
             stmt = delete(model).where(
                 model.period_month.in_(dataframe_from_json['period_month'].drop_duplicates().to_list()),
@@ -53,8 +55,9 @@ class SyncORM:
             session.commit()
 
     @staticmethod
-    def select_data(data, model):
+    def select_data(data, model, server):
         dataframe_from_json = pd.DataFrame(data)
+        sync_session_factory = sessionmaker(sql_set(server=server))
         with sync_session_factory() as session:
             stmt = select(model).where(
                 model.period_month.in_(dataframe_from_json['period_month'].drop_duplicates().to_list()),
@@ -78,7 +81,8 @@ class SyncORM:
         return true_dict
 
     @staticmethod
-    def select_year(model, year):
+    def select_year(model, year, server):
+        sync_session_factory = sessionmaker(sql_set(server=server))
         with sync_session_factory() as session:
             stmt = select(model).where(model.period_year.in_([year]))
         results = session.execute(stmt).scalars().all()

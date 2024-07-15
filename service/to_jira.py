@@ -2,21 +2,19 @@
 import os
 # Сторонние библиотеки
 from jira import JIRA
-from config import settings
+from config import Settings
 
 
 class Jira:
-    issuekey = settings.ISSUE_KEY
-    login = settings.ZABBIX_USER
-    password = settings.ZABBIX_PASSWORD
-    jira_server = settings.JIRA_SERVER
 
     @classmethod
-    def attach(cls, year):
+    def attach(cls, year, server):
+        settings = Settings(_env_file=f'{server}.env')
+
         file_name = f'{settings.DOC_PATH}{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}'
-        jira_options = {'server': cls.jira_server}
-        jira = JIRA(options=jira_options, basic_auth=(cls.login, cls.password))
-        jql = "issuekey = \"" + cls.issuekey + "\" AND attachments is not EMPTY"
+        jira_options = {'server': settings.JIRA_SERVER}
+        jira = JIRA(options=jira_options, basic_auth=(settings.ZABBIX_USER, settings.ZABBIX_PASSWORD))
+        jql = "issuekey = \"" + settings.ISSUE_KEY + "\" AND attachments is not EMPTY"
         query = jira.search_issues(jql_str=jql, json_result=True, fields="key, attachment")
         for i in query['issues']:
             for a in i['fields']['attachment']:
@@ -25,5 +23,5 @@ class Jira:
                         jira.delete_attachment(a['id'])
                     except Exception:
                         pass
-        issue_j = jira.issue(cls.issuekey)
+        issue_j = jira.issue(settings.ISSUE_KEY)
         jira.add_attachment(issue=issue_j, attachment=file_name)

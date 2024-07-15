@@ -38,12 +38,12 @@ class Excel:
         for year in years:
             months = [i for i, j in months_years.items() if j == year]
             cls.insert_months(name=f'{settings.DOC_PATH}{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}', year=year,
-                             months=months)
+                              months=months, server=server)
 
     @classmethod
-    def insert_months(cls, name: str, year: int, months: list):
+    def insert_months(cls, name: str, year: int, months: list, server: str):
 
-        data = pd.DataFrame(SyncORM.select_year(ClockJS, year))
+        data = pd.DataFrame(SyncORM.select_year(ClockJS, year, server))
         data = pd.DataFrame(data)
 
         # формируем список, содержащий дубликаты базового контракта
@@ -77,16 +77,17 @@ class Excel:
 
         wb.save(name)
         wb.close()
-        requests.get(
+        requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=FINISHED CREATE EXCEL {str(year)}')
 
-        Jira.attach(year)
-        requests.get(
-            f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=ATTACH EXCEL {str(year)} TO JIRA')
+        Jira.attach(year, server)
+        requests.post(
+            f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=ATTACH EXCEL_{str(year)} '
+            f'TO {settings.JIRA_SERVER[7:].upper()}')
 
     @classmethod
     def df_excel(cls, data, month, year):
-        requests.get(
+        requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Started form a dataframe {month}')
 
         alphabet = [chr(i) for i in range(73, 91)] + [f'A{chr(j)}' for j in range(65, 78)]
@@ -366,7 +367,7 @@ class Excel:
 
         # Конкатенируем в общий фрейм
         one_month = pd.concat(dataframe_worker, ignore_index=True)
-        requests.get(
+        requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Finished form a dataframe {month}')
 
         # Делаем правильный порядок колонок
@@ -379,7 +380,7 @@ class Excel:
 
     @classmethod
     def doc_header(cls, wb, month, year):
-        requests.get(
+        requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Started creating sheet {month}')
 
         ws = wb.create_sheet(month)
@@ -600,5 +601,5 @@ class Excel:
             ws.cell(row=cor[0], column=cor[1]).fill = PatternFill(
                 start_color="F79646", end_color="F79646", fill_type="solid")
 
-        requests.get(
+        requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Finished creating sheet {month}')

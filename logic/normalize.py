@@ -93,16 +93,16 @@ class Normalize:
 
             df_json = df_json.explode('kontrakt_timetracking', ignore_index=True)
 
-            requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Normalize JSON - OK!')
+            requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Normalize JSON - OK!')
 
             return list(df_json.to_dict('index').values())
 
         except KeyError as key:
             # делаем запрос на конечную точку
-            requests.get(
+            requests.post(
                 f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={str(traceback.format_exc())}')
 
-            requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
+            requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
 
             sys.exit()
 

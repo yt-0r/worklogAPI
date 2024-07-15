@@ -12,7 +12,6 @@ class Logging:
                             level=logging.INFO,
                             encoding='utf-8'
                             )
-        logging.info("START SCRYPT")
 
     @staticmethod
     def log_add(lv, message):

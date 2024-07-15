@@ -8,7 +8,6 @@ import json
 from fastapi import FastAPI, applications
 from fastapi.openapi.docs import get_swagger_ui_html
 from pydantic import ValidationError
-from pydantic_settings import BaseSettings
 from requests.auth import HTTPBasicAuth
 from sqlalchemy.exc import ProgrammingError
 
@@ -35,7 +34,7 @@ def swagger_monkey_patch(*args, **kwargs):
         swagger_css_url="https://cdn.staticfile.net/swagger-ui/5.1.0/swagger-ui.min.css")
 
 
-applications.get_swagger_ui_html = swagger_monkey_patch
+applications.post_swagger_ui_html = swagger_monkey_patch
 
 app = FastAPI(
     title='test'
@@ -46,15 +45,19 @@ from config import Settings
 settings: Settings
 
 
-@app.get('/worklog')
+@app.post('/worklog')
 def worklog(date: str, server: str):
     global settings
     settings = Settings(_env_file=f'{server}.env')
 
-    requests.get(f'{settings.SERVICE_REST}/service/log/set')
+    requests.post(f'{settings.SERVICE_REST}/service/log/set')
+    requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=START {date} '
+                  f'ON {settings.JIRA_SERVER[7:].upper()}')
 
-    json_normalized = json.loads(requests.get(f'{settings.SERVICE_REST}/logic/normalize?date={date}&server={server}').text)
-    json_calculated = json.loads(requests.post(f'{settings.SERVICE_REST}/logic/calculate?server={server}', json=json_normalized).text)
+    json_normalized = json.loads(
+        requests.post(f'{settings.SERVICE_REST}/logic/normalize?date={date}&server={server}').text)
+    json_calculated = json.loads(
+        requests.post(f'{settings.SERVICE_REST}/logic/calculate?server={server}', json=json_normalized).text)
 
     months = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])['period_month'].to_list()
     years = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])['period_year'].to_list()
@@ -64,13 +67,13 @@ def worklog(date: str, server: str):
     return 'create excel!'
 
 
-@app.get('/service/log/set')
+@app.post('/service/log/set')
 def service_log_set():
     Logging.log_set()
     return 'OK!'
 
 
-@app.get('/logic/normalize', response_model=List[Workers])
+@app.post('/logic/normalize', response_model=List[Workers])
 def normalize(date: str, server: str):
     try:
         rest = settings.JIRA_REST + date
@@ -92,14 +95,14 @@ def normalize(date: str, server: str):
 
     except ValidationError as er:
         # делаем запрос на конечные точки
-        requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={str(er)}')
-        requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={str(er)}')
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
         sys.exit()
 
     except OSError as er:
         # делаем запрос на конечные точки
-        requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={str(er)}')
-        requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={str(er)}')
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
         sys.exit()
 
 
@@ -118,7 +121,7 @@ def calc(server: str, data: List[Workers]):
     return json_calculated
 
 
-@app.get('/service/log')
+@app.post('/service/log')
 def service_log_add(level: int, message: str):
     Logging.log_add(level, message)
 
@@ -127,8 +130,8 @@ def service_log_add(level: int, message: str):
 def service_file(data: List[Workers], name: Union[str, None] = '.json'):
     json_to_record = [i.__dict__ for i in data]
     JsonFile.record(json_to_record, name)
-    requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&'
-                 f'message=Record JSON to {name}')
+    requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&'
+                  f'message=Record JSON to {name}')
     return 'good!'
 
 
@@ -144,10 +147,10 @@ def database(name: str, server: str, data: List[Workers]):
             model = ClockJS
 
         try:
-            data_from_database = SyncORM.select_data(data_from_json, model)
+            data_from_database = SyncORM.select_data(data_from_json, model, server)
         except ProgrammingError:
-            requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&'
-                         f'ProgrammingError')
+            requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&'
+                          f'ProgrammingError')
             data_from_database = []
 
         # соединяем данные с json и базы
@@ -157,19 +160,19 @@ def database(name: str, server: str, data: List[Workers]):
         group_data_json_database = JsonManager.group(data_json_database)
 
         # создаем таблицы
-        SyncORM.create_table()
+        SyncORM.create_table(server)
 
         # удаляем данные
-        SyncORM.delete_data(data_from_json, model)
+        SyncORM.delete_data(data_from_json, model, server)
 
         # пишем данные
-        SyncORM.insert_data(group_data_json_database, model)
+        SyncORM.insert_data(group_data_json_database, model, server)
 
         # пишем лог
-        requests.get(
+        requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Update data in {name} database - OK!')
         return 'OK!'
 
     except Exception as er:
-        requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
         sys.exit()

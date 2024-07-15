@@ -62,11 +62,11 @@ class JsonManager:
             return result_df
 
         except ValueError as er:
-            requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message={traceback.format_exc()}')
+            requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message={traceback.format_exc()}')
             return pd.DataFrame(data_from_json)
 
         except KeyError as er:
-            requests.get(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message={traceback.format_exc()}')
+            requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message={traceback.format_exc()}')
             return pd.DataFrame(data_from_json)
 
     @staticmethod
