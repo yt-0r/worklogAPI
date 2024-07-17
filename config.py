@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     DOC_TYPE: str
     FTP_USER: str
     FTP_PASS: str
+    BOT_TOKEN: str
 
     def DATABASE_URL_mysqlconnector(self, url):
         return f"mysql+mysqlconnector://{self.DB_USER}:{self.DB_PASS}@{url}:{self.DB_PORT}/{self.DB_NAME}"
