@@ -24,9 +24,6 @@ from logic.calculate import Calculator
 import pandas as pd
 
 
-# from config import settings
-
-
 def swagger_monkey_patch(*args, **kwargs):
     return get_swagger_ui_html(
         *args, **kwargs,
@@ -101,6 +98,7 @@ def normalize(url: str, data: JSONStructure = None):
         return json_valid
 
     except ValidationError as er:
+
         # делаем запрос на конечные точки
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={str(er)}')
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
@@ -133,12 +131,6 @@ def calc(url: str, data: List[Workers]):
 def service_log_add(level: int, message: str):
     Logging.log_add(level, message)
     return 'OK!'
-
-
-@app.post('/test')
-def test(data: JSONStructure = None):
-    print(data)
-    return '200'
 
 
 @app.post('/service/file')
