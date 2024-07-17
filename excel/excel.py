@@ -23,6 +23,7 @@ pd.set_option('display.max_colwidth', None)
 pd.set_option('expand_frame_repr', False)
 pd.options.mode.chained_assignment = None
 settings: Settings
+jira_server: str
 
 
 class Excel:
@@ -30,7 +31,10 @@ class Excel:
     correction_list = []
 
     @classmethod
-    def create_excel(cls, months_years: dict, server: str):
+    def create_excel(cls, months_years: dict, server: str, url: str):
+
+        global jira_server
+        jira_server = url
         global settings
         settings = Settings(_env_file=f'{server}.env')
 
@@ -38,12 +42,12 @@ class Excel:
         for year in years:
             months = [i for i, j in months_years.items() if j == year]
             cls.insert_months(name=f'{settings.DOC_PATH}{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}', year=year,
-                              months=months, server=server)
+                              months=months, server=server, url=url)
 
     @classmethod
-    def insert_months(cls, name: str, year: int, months: list, server: str):
+    def insert_months(cls, name: str, year: int, months: list, server: str, url: str):
 
-        data = pd.DataFrame(SyncORM.select_year(ClockJS, year, server))
+        data = pd.DataFrame(SyncORM.select_year(ClockJS, year, server, url))
         data = pd.DataFrame(data)
 
         # формируем список, содержащий дубликаты базового контракта
@@ -73,22 +77,23 @@ class Excel:
             cls.doc_header(wb, month, year)
 
             # выгружаем df и раскрашиваем все, что нужно
-            cls.beauty(wb, df_all, month)
+            cls.beauty(wb, df_all, month, year)
 
         wb.save(name)
         wb.close()
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=FINISHED CREATE EXCEL {str(year)}')
 
-        Jira.attach(year, server)
+        Jira.attach(url, server, f'{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}')
+
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=ATTACH EXCEL_{str(year)} '
-            f'TO {settings.JIRA_SERVER[7:].upper()}')
+            f'TO {jira_server.split('//')[1].upper()}')
 
     @classmethod
     def df_excel(cls, data, month, year):
         requests.post(
-            f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Started form a dataframe {month}')
+            f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Started form a dataframe {month} {year}')
 
         alphabet = [chr(i) for i in range(73, 91)] + [f'A{chr(j)}' for j in range(65, 78)]
         numbers = [i for i in range(1, len(alphabet) + 1)]
@@ -145,11 +150,11 @@ class Excel:
                     cls.correction_list.append((count_shift + 1, ins['work_calendar_day'] + 8))
 
                 # Гиперссылка на карточку сотрудника
-                hyperlink_name = (f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=summary~%27{ins['job_name']}%27", '
+                hyperlink_name = (f'=HYPERLINK("{jira_server}/issues/?jql=summary~%27{ins['job_name']}%27", '
                                   f'"{ins['job_name']}")')
 
                 # Гиперссылка на карточку отдела
-                hyperlink_department = (f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=status=Трудоустройство and '
+                hyperlink_department = (f'=HYPERLINK("{jira_server}/issues/?jql=status=Трудоустройство and '
                                         f'cf[14829]=%27{ins['job_department']}%27", "{ins['job_department']}")')
 
                 # Ставим гиперссылку имени на строку с базовым контрактом
@@ -168,25 +173,25 @@ class Excel:
                 if (ins['event'] in ['shift', 'trip', 'permit', 'correction'] and ins['work_time'] > 0
                         and ins['work_calendar_daytype'] == 0 and ins['kontrakt_filter'] != '0'
                         and ins['kontrakt_timetracking'] > 0):
-                    value = (f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
                              f'{ins['kontrakt_timetracking']})')
 
                 # Выставляем shift по заявке в выходной день, если есть filter и worktime > 0.
                 # Например: сменщик работает в воскресенье и выполнял заявки
                 elif (ins['event'] == 'shift' and ins['work_time'] > 0 and ins['work_calendar_daytype'] == 1
                       and ins['kontrakt_filter'] != '0' and ins['kontrakt_timetracking'] > 0):
-                    value = (f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
                              f'{ins['kontrakt_timetracking']})')
 
                 # Выставляем командировку на выходных. Если у человека командировка захватывает выходные,
                 # то это считается выходным, но человек всё еще в командировке, так что нам необходима тут гиперссылка
                 elif ins['event'] == 'trip' and ins['work_calendar_daytype'] == 1:
-                    value = f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", "В")'
+                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "В")'
                     weekend_flag = False
 
                 # Выставляем permit в выходной день
                 elif ins['event'] == 'permit' and ins['work_calendar_daytype'] == 1:
-                    value = (f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
                              f'{ins['kontrakt_timetracking']})')
 
                 # Если событие - корректировка и work_time == 0, то значит человек не явился на работу, ставим Н
@@ -195,11 +200,11 @@ class Excel:
 
                 # Ставим отпуск с гиперссылкой на DOCCORP
                 elif ins['event'] == 'otpusk':
-                    value = f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", "О")'
+                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "О")'
 
                 # Ставим отгул с гиперссылкой на DOCCORP
                 elif ins['event'] == 'compensatory':
-                    value = f'=HYPERLINK("{settings.JIRA_SERVER}/issues/?jql=issue in ({ins['kontrakt_filter']})", "От")'
+                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "От")'
 
                 # Ставим Б, если событие больничный
                 elif ins['event'] == 'hospital':
@@ -239,10 +244,10 @@ class Excel:
             # ставим формулы
             for index, ins in df_rows.iterrows():
                 # Количество смен (день)
-                df_rows.loc[index, 'AN'] = f'=COUNT(I{count_right}:AM{count_right})' if ins['F'] == 'день' else ' '
+                df_rows.loc[index, 'AN'] = f'=COUNT(I{count_right}:AM{count_right})' if ins['F'] == 'День' else ' '
 
                 # Количество смен (ночь)
-                df_rows.loc[index, 'AO'] = f'=COUNT(I{count_right}:AM{count_right})' if ins['F'] == 'ночь' else ' '
+                df_rows.loc[index, 'AO'] = f'=COUNT(I{count_right}:AM{count_right})' if ins['F'] == 'Ночь' else ' '
 
                 # Отпуск
                 df_rows.loc[index, 'AP'] = f'=COUNTIF(I{count_right}:AM{count_right}, "О")' if ins['E'][
@@ -261,10 +266,10 @@ class Excel:
                                             f'SUM(I{count_right}:AM{count_right})/8') if ins['G'] == 'К-ка' else ' '
 
                 # Кол-во отработанных часов (день)
-                df_rows.loc[index, 'AU'] = f'=SUM(I{count_right}:AM{count_right})' if ins['F'] == 'день' else ' '
+                df_rows.loc[index, 'AU'] = f'=SUM(I{count_right}:AM{count_right})' if ins['F'] == 'День' else ' '
 
                 # Кол-во отработанных часов (ночь)
-                df_rows.loc[index, 'AV'] = f'=SUM(I{count_right}:AM{count_right})' if ins['F'] == 'ночь' else ' '
+                df_rows.loc[index, 'AV'] = f'=SUM(I{count_right}:AM{count_right})' if ins['F'] == 'Ночь' else ' '
 
                 # собираем формулу для выходного дня
                 formula_weekend = f'=SUM('
@@ -275,8 +280,8 @@ class Excel:
                 formula_weekend = ' ' if formula_weekend == '=SUM()' else formula_weekend
 
                 # Ставим формулу
-                df_rows.loc[index, 'AW'] = formula_weekend if ins['F'] == 'день' else ' '
-                df_rows.loc[index, 'AX'] = formula_weekend if ins['F'] == 'ночь' else ' '
+                df_rows.loc[index, 'AW'] = formula_weekend if ins['F'] == 'День' else ' '
+                df_rows.loc[index, 'AX'] = formula_weekend if ins['F'] == 'Ночь' else ' '
 
                 count_right += 1
             ###########################################################################
@@ -319,9 +324,9 @@ class Excel:
             formula_working_shift_night = defaultdict(list)
             for _, row in df_rows.iterrows():
                 for key, val in columns.items():
-                    if row[str(key)] not in ['О', 'Б', 'В', 'Н', 'От', ' ', ''] and row['F'] == 'день':
+                    if row[str(key)] not in ['О', 'Б', 'В', 'Н', 'От', ' ', ''] and row['F'] == 'День':
                         formula_working_shift_day[key].append(f'{val}{count_shift + 1}')
-                    if row[str(key)] not in ['О', 'Б', 'В', 'Н', 'От', ' ', ''] and row['F'] == 'ночь':
+                    if row[str(key)] not in ['О', 'Б', 'В', 'Н', 'От', ' ', ''] and row['F'] == 'Ночь':
                         formula_working_shift_night[key].append(f'{val}{count_shift + 1}')
                 count_shift += 1
 
@@ -361,14 +366,13 @@ class Excel:
 
             # Объединяем строки и ИТОГО
             df_with_total = pd.concat([total_row, df_rows], ignore_index=True).sort_values(by='E', ascending=False)
-
             # добавляем в список с другими работниками
             dataframe_worker.append(df_with_total.sort_values(by='E', ascending=False))
 
         # Конкатенируем в общий фрейм
         one_month = pd.concat(dataframe_worker, ignore_index=True)
         requests.post(
-            f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Finished form a dataframe {month}')
+            f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Finished form a dataframe {month} {year}')
 
         # Делаем правильный порядок колонок
         one_month = one_month[columns_dop]
@@ -381,7 +385,7 @@ class Excel:
     @classmethod
     def doc_header(cls, wb, month, year):
         requests.post(
-            f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Started creating sheet {month}')
+            f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Started creating sheet {month} {year}')
 
         ws = wb.create_sheet(month)
 
@@ -547,7 +551,7 @@ class Excel:
             ws.cell(row=6, column=col).fill = beige_fill if col > 45 else green_fill
 
     @classmethod
-    def beauty(cls, wb, one_month, month):
+    def beauty(cls, wb, one_month, month, year):
         ws = wb[month]
 
         # выгружаем pandas dataframe на лист
@@ -602,4 +606,4 @@ class Excel:
                 start_color="F79646", end_color="F79646", fill_type="solid")
 
         requests.post(
-            f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Finished creating sheet {month}')
+            f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Finished creating sheet {month} {year}')

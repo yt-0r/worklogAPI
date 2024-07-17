@@ -27,7 +27,6 @@ class Calculator:
         list_df = []
 
         for _, worker in workers.iterrows():
-
             worker_to_calc = data.loc[(data['job_name'] == worker['job_name']) &
                                       (data['job_department'] == worker['job_department']) &
                                       (data['job_position'] == worker['job_position']) &
@@ -71,6 +70,7 @@ class Calculator:
 
             # вычисляем коэффициент, который показывает, на сколько нужно скорректировать время по timetracking
             # берем с главного контракта кол-во часов
+
             # work_time = float(worker_to_calc['work_time'].loc[worker_to_calc['kontrakt_type'] == 'main'])
 
             work_time = float(worker_to_calc['work_time'].iloc[0])

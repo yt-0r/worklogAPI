@@ -13,8 +13,8 @@ import hashlib
 
 class SyncORM:
     @staticmethod
-    def insert_data(data, model, server):
-        sync_session_factory = sessionmaker(sql_set(server=server))
+    def insert_data(data, model, server, url):
+        sync_session_factory = sessionmaker(sql_set(server=server, url=url))
         with sync_session_factory() as session:
             workers = [model(
                 id=hashlib.md5((json[0]['job_name'] + ' ' +
@@ -34,14 +34,14 @@ class SyncORM:
             session.commit()
 
     @staticmethod
-    def create_table(server):
+    def create_table(server, url):
 
-        Base.metadata.create_all(sql_set(server))
+        Base.metadata.create_all(sql_set(server, url))
 
     @staticmethod
-    def delete_data(data, model, server):
+    def delete_data(data, model, server, url):
         dataframe_from_json = pd.DataFrame(data)
-        sync_session_factory = sessionmaker(sql_set(server=server))
+        sync_session_factory = sessionmaker(sql_set(server=server, url=url))
         with sync_session_factory() as session:
             stmt = delete(model).where(
                 model.period_month.in_(dataframe_from_json['period_month'].drop_duplicates().to_list()),
@@ -55,9 +55,9 @@ class SyncORM:
             session.commit()
 
     @staticmethod
-    def select_data(data, model, server):
+    def select_data(data, model, server, url):
         dataframe_from_json = pd.DataFrame(data)
-        sync_session_factory = sessionmaker(sql_set(server=server))
+        sync_session_factory = sessionmaker(sql_set(server=server, url=url))
         with sync_session_factory() as session:
             stmt = select(model).where(
                 model.period_month.in_(dataframe_from_json['period_month'].drop_duplicates().to_list()),
@@ -81,8 +81,8 @@ class SyncORM:
         return true_dict
 
     @staticmethod
-    def select_year(model, year, server):
-        sync_session_factory = sessionmaker(sql_set(server=server))
+    def select_year(model, year, server, url):
+        sync_session_factory = sessionmaker(sql_set(server=server, url=url))
         with sync_session_factory() as session:
             stmt = select(model).where(model.period_year.in_([year]))
         results = session.execute(stmt).scalars().all()
