@@ -88,7 +88,7 @@ class Excel:
 
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=ATTACH EXCEL_{str(year)} '
-            f'TO {jira_server.split('//')[1].upper()}')
+            f'TO {jira_server.split("//")[1].upper()}')
 
     @classmethod
     def df_excel(cls, data, month, year):
@@ -150,12 +150,12 @@ class Excel:
                     cls.correction_list.append((count_shift + 1, ins['work_calendar_day'] + 8))
 
                 # Гиперссылка на карточку сотрудника
-                hyperlink_name = (f'=HYPERLINK("{jira_server}/issues/?jql=summary~%27{ins['job_name']}%27", '
-                                  f'"{ins['job_name']}")')
+                hyperlink_name = (f'=HYPERLINK("{jira_server}/issues/?jql=summary~%27{ins["job_name"]}%27", '
+                                  f'"{ins["job_name"]}")')
 
                 # Гиперссылка на карточку отдела
                 hyperlink_department = (f'=HYPERLINK("{jira_server}/issues/?jql=status=Трудоустройство and '
-                                        f'cf[14829]=%27{ins['job_department']}%27", "{ins['job_department']}")')
+                                        f'cf[14829]=%27{ins["job_department"]}%27", "{ins["job_department"]}")')
 
                 # Ставим гиперссылку имени на строку с базовым контрактом
                 row['B'] = [hyperlink_name] if ins['kontrakt_name'][0] == 'О' else [ins['job_name']]
@@ -173,38 +173,38 @@ class Excel:
                 if (ins['event'] in ['shift', 'trip', 'permit', 'correction'] and ins['work_time'] > 0
                         and ins['work_calendar_daytype'] == 0 and ins['kontrakt_filter'] != '0'
                         and ins['kontrakt_timetracking'] > 0):
-                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
-                             f'{ins['kontrakt_timetracking']})')
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", '
+                             f'{ins["kontrakt_timetracking"]})')
 
                 # Выставляем shift по заявке в выходной день, если есть filter и worktime > 0.
                 # Например: сменщик работает в воскресенье и выполнял заявки
                 elif (ins['event'] == 'shift' and ins['work_time'] > 0 and ins['work_calendar_daytype'] == 1
                       and ins['kontrakt_filter'] != '0' and ins['kontrakt_timetracking'] > 0):
-                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
-                             f'{ins['kontrakt_timetracking']})')
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", '
+                             f'{ins["kontrakt_timetracking"]})')
 
                 # Выставляем командировку на выходных. Если у человека командировка захватывает выходные,
                 # то это считается выходным, но человек всё еще в командировке, так что нам необходима тут гиперссылка
                 elif ins['event'] == 'trip' and ins['work_calendar_daytype'] == 1:
-                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "В")'
+                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", "В")'
                     weekend_flag = False
 
                 # Выставляем permit в выходной день
                 elif ins['event'] == 'permit' and ins['work_calendar_daytype'] == 1:
-                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
-                             f'{ins['kontrakt_timetracking']})')
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", '
+                             f'{ins["kontrakt_timetracking"]})')
 
                 # Если событие - корректировка и work_time == 0, то значит человек не явился на работу, ставим Н
-                elif ins['work_time'] == 0 and ins['event'] == 'correction' and ins['kontrakt_name'][0] == 'О':
+                elif ins['work_time'] == 0 and ins['event'] == 'correction' and ins["kontrakt_name"][0] == 'О':
                     value = 'Н'
 
                 # Ставим отпуск с гиперссылкой на DOCCORP
                 elif ins['event'] == 'otpusk':
-                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "О")'
+                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", "О")'
 
                 # Ставим отгул с гиперссылкой на DOCCORP
                 elif ins['event'] == 'compensatory':
-                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "От")'
+                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", "От")'
 
                 # Ставим Б, если событие больничный
                 elif ins['event'] == 'hospital':
@@ -219,8 +219,9 @@ class Excel:
                 else:
                     value = ins['kontrakt_timetracking'] if ins['kontrakt_timetracking'] > 0 else ' '
 
+                    
                 # присваиваем значение
-                row[f'{str(ins['work_calendar_day'])}'] = value
+                row[f'{str(ins["work_calendar_day"])}'] = value
 
                 # добавляем в список, для дальнейшей конкатенации
                 rows_worker.append(row)
@@ -244,13 +245,13 @@ class Excel:
             # ставим формулы
             for index, ins in df_rows.iterrows():
                 # Количество смен (день)
-                df_rows.loc[index, 'AN'] = f'=COUNT(I{count_right}:AM{count_right})' if ins['F'] == 'День' else ' '
+                df_rows.loc[index, 'AN'] = f'=COUNT(I{count_right}:AM{count_right})' if ins["F"] == 'День' else ' '
 
                 # Количество смен (ночь)
-                df_rows.loc[index, 'AO'] = f'=COUNT(I{count_right}:AM{count_right})' if ins['F'] == 'Ночь' else ' '
+                df_rows.loc[index, 'AO'] = f'=COUNT(I{count_right}:AM{count_right})' if ins["F"] == 'Ночь' else ' '
 
                 # Отпуск
-                df_rows.loc[index, 'AP'] = f'=COUNTIF(I{count_right}:AM{count_right}, "О")' if ins['E'][
+                df_rows.loc[index, 'AP'] = f'=COUNTIF(I{count_right}:AM{count_right}, "О")' if ins["E"][
                                                                                                    0] == 'О' else ' '
                 # Отгул
                 df_rows.loc[index, 'AQ'] = f'=COUNTIF(I{count_right}:AM{count_right}, "От")' if ins['E'][

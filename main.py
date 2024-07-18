@@ -5,16 +5,18 @@ from typing import List, Dict, Union, AnyStr, Any
 import requests
 import json
 
-from fastapi import FastAPI, applications, Body
+import uvicorn
+from fastapi import FastAPI, applications
 from fastapi.openapi.docs import get_swagger_ui_html
 from pydantic import ValidationError
-from requests.auth import HTTPBasicAuth
+
 from sqlalchemy.exc import ProgrammingError
 
+from bot.notification import Notification
 from database.orm import SyncORM
 from logic.json_manager import JsonManager
 from logic.normalize import Normalize
-from models.json_model import Workers, Raw
+from models.json_model import Workers
 from service.to_log import Logging
 from service.to_file import JsonFile
 
@@ -45,6 +47,10 @@ JSONObject = Dict[AnyStr, Any]
 JSONArray = List[Any]
 JSONStructure = Union[JSONArray, JSONObject]
 
+from bot.t_bot import bot
+
+bot.polling(non_stop=True)
+
 
 @app.post('/worklog')
 def worklog(url: str, data: JSONStructure = None):
@@ -55,7 +61,7 @@ def worklog(url: str, data: JSONStructure = None):
 
     requests.post(f'{settings.SERVICE_REST}/service/log/set')
     requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=START '
-                  f'ON {url.split('//')[1]}')
+                  f'ON {url.split("//")[1]}')
 
     json_normalized = json.loads(
         requests.post(f'{settings.SERVICE_REST}/logic/normalize?url={url}', json=data).text)
@@ -63,14 +69,18 @@ def worklog(url: str, data: JSONStructure = None):
     json_calculated = json.loads(
         requests.post(f'{settings.SERVICE_REST}/logic/calculate?url={url}', json=json_normalized).text)
 
-    months = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])['period_month'].to_list()
+    months = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])[
+        'period_month'].to_list()
     years = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])['period_year'].to_list()
     months_years = dict(zip(months, years))
 
     res = requests.post(f'{settings.SERVICE_REST}/create_exel?url={url}', json=months_years)
 
-    return {'status_code': 200, 'text': 'create excel!'} if res.status_code == 200 else {'status_code': 500,
-                                                                                         'text': 'internal error !!!!!'}
+    if res.status_code != 200:
+        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}')
+        return {'status_code': 500, 'text': 'internal error !!!!!'}
+    else:
+        return {'status_code': 200, 'text': 'create excel!'}
 
 
 @app.post('/service/log/set')
@@ -79,10 +89,15 @@ def service_log_set():
     return {'OK!'}
 
 
+@app.post('/service/telegram')
+def telegram(server: str):
+    Notification.send_to_telegram(server, 'Ошибка!')
+
+
 @app.post('/logic/normalize', response_model=List[Workers])
 def normalize(url: str, data: JSONStructure = None):
+    server = url.split('.')[0].split('//')[1]
     try:
-        server = url.split('.')[0].split('//')[1]
 
         Normalize.data = data
         json_normalized = Normalize.js_to_norm(server)
@@ -102,12 +117,18 @@ def normalize(url: str, data: JSONStructure = None):
         # делаем запрос на конечные точки
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={str(er)}')
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
+
+        # Отправляем в телегу
+        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}')
         sys.exit()
 
     except OSError as er:
         # делаем запрос на конечные точки
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={str(er)}')
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
+
+        # Отправляем в телегу
+        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}')
         sys.exit()
 
 
@@ -137,16 +158,15 @@ def service_log_add(level: int, message: str):
 def service_file(data: List[Workers], name: Union[str, None] = '.json'):
     json_to_record = [i.__dict__ for i in data]
     JsonFile.record(json_to_record, name)
-    requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&'
-                  f'message=Record JSON to {name}')
+    requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Record JSON to {name}')
     return 'OK!'
 
 
 @app.post('/database/{name}')
 def database(name: str, url: str, data: List[Workers]):
+    data_from_json = [i.__dict__ for i in data]
+    server = url.split('.')[0].split('//')[1]
     try:
-        data_from_json = [i.__dict__ for i in data]
-        server = url.split('.')[0].split('//')[1]
         if name == 'raw':
             model = RawJS
 
@@ -180,6 +200,8 @@ def database(name: str, url: str, data: List[Workers]):
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Update data in {name} database - OK!')
         return 'OK!'
 
-    except Exception as er:
+    except Exception:
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
+        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}')
         sys.exit()
+

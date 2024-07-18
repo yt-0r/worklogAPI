@@ -1,27 +1,24 @@
 import requests
 
 from config import Settings
+from database.db_sqlite import select
 
 
-def send_to_telegram(server, user_id, document, msg):
-    settings = Settings(_env_file=f'{server}.env')
-    for i in user_id:
-        url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendDocument"
+class Notification:
 
-        files = {
-            'document': open(document, 'rb')
-        }
-        data = {
-            'chat_id': i,
-            'caption': msg
-        }
+    @staticmethod
+    def send_to_telegram(server, msg):
+        settings = Settings(_env_file=f'{server}.env')
+        user_id = select('worklog_errors')
+        for i in user_id:
+            url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendDocument"
 
-        requests.post(url, files=files, data=data)
+            files = {
+                'document': open(settings.LOG_PATH, 'rb')
+            }
+            data = {
+                'chat_id': i,
+                'caption': msg
+            }
 
-
-bot_token = '7256671211:AAGTZKYiVcg_y3jfvBBqtBXLHilIwG7he3Q'
-chat_id = [2058516705, 5548471233]
-document_path = 'worklog.log'  # Путь к файлу, который хотите отправить
-caption = 'пиздец!'
-
-send_to_telegram(bot_token, chat_id, document_path, caption)
+            requests.post(url, files=files, data=data)
