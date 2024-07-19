@@ -81,10 +81,17 @@ class SyncORM:
         return true_dict
 
     @staticmethod
-    def select_year(model, year, server, url):
+    def select_year(model, year, server, url, dep, worker):
         sync_session_factory = sessionmaker(sql_set(server=server, url=url))
+
         with sync_session_factory() as session:
-            stmt = select(model).where(model.period_year.in_([year]))
+            if worker != '':
+                stmt = select(model).where(model.period_year.in_([year]), model.job_name.in_([worker]))
+            elif dep != '':
+                stmt = select(model).where(model.period_year.in_([year]), model.job_department.in_([dep]))
+            else:
+                stmt = select(model).where(model.period_year.in_([year]))
+
         results = session.execute(stmt).scalars().all()
 
         dict_from_database = [result.__dict__ for result in results]

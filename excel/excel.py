@@ -1,4 +1,6 @@
+import datetime
 import logging
+from typing import Union
 
 from openpyxl import Workbook
 from openpyxl.reader.excel import load_workbook
@@ -29,26 +31,47 @@ jira_server: str
 class Excel:
     days_types = {}
     correction_list = []
+    months_all = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь',
+                  'Ноябрь', 'Декабрь']
 
     @classmethod
-    def create_excel(cls, months_years: dict, server: str, url: str):
+    def create_excel(cls, server: str, url: str,
+                     years: Union[str, None] = None,
+                     months_years: Union[dict, None] = None,
+                     worker: Union[str, None] = None,
+                     dep: Union[str, None] = None):
 
         global jira_server
         jira_server = url
         global settings
         settings = Settings(_env_file=f'{server}.env')
 
-        years = list(set(months_years.values()))
+        worker = '' if worker is None else worker
+        dep = '' if dep is None else dep
+
+        if months_years is None and years is None:
+            years = [datetime.date.today().year]
+
+        if months_years is not None and years is None:
+            years = list(set(months_years.values())) if months_years is not None else [years]
+
+        if months_years is None and years is not None:
+            years = years
+
         for year in years:
-            months = [i for i, j in months_years.items() if j == year]
-            cls.insert_months(name=f'{settings.DOC_PATH}{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}', year=year,
-                              months=months, server=server, url=url)
+            months = [i for i, j in months_years.items() if j == year] if months_years is not None else cls.months_all
+            if worker != '' or dep != '':
+                name = f'{settings.DOC_PATH}{settings.DOC_NAME} {worker}{dep} {str(year)}{settings.DOC_TYPE}'
+            else:
+                name = f'{settings.DOC_PATH}{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}'
+
+            cls.insert_months(name=name, year=year, months=months, server=server, url=url, dep=dep, worker=worker)
 
     @classmethod
-    def insert_months(cls, name: str, year: int, months: list, server: str, url: str):
+    def insert_months(cls, name: str, year: int, months: list, server: str, url: str, dep: str, worker: str):
 
-        data = pd.DataFrame(SyncORM.select_year(ClockJS, year, server, url))
-        data = pd.DataFrame(data)
+        data = pd.DataFrame(
+            SyncORM.select_year(model=ClockJS, year=year, server=server, url=url, dep=dep, worker=worker))
 
         # формируем список, содержащий дубликаты базового контракта
         drop_list = [ind for ind, row in data.iterrows() if row['kontrakt_name'][0] == 'О' and
@@ -69,6 +92,7 @@ class Excel:
             wb = Workbook()
             months = data.drop_duplicates(['period_month', 'period_year'])['period_month'].to_list()
             wb.remove(wb.active)
+
         for month in months:
             # подготавливаем df для вставки в excel
             df_all = cls.df_excel(data, month, year)
@@ -84,7 +108,7 @@ class Excel:
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=FINISHED CREATE EXCEL {str(year)}')
 
-        Jira.attach(url, server, f'{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}')
+        Jira.attach(url=url, server=server, name=name)
 
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=ATTACH EXCEL_{str(year)} '
@@ -104,6 +128,7 @@ class Excel:
 
         days = data.loc[(data['period_month'] == month) & (data['period_year'] == year)].drop_duplicates(
             ['work_calendar_daytype', 'work_calendar_day'])
+
         cls.days_types = dict(zip(days['work_calendar_day'].to_list(), days['work_calendar_daytype'].to_list()))
 
         # Список с выходными днями (нужен ниже для формул)
@@ -219,7 +244,6 @@ class Excel:
                 else:
                     value = ins['kontrakt_timetracking'] if ins['kontrakt_timetracking'] > 0 else ' '
 
-                    
                 # присваиваем значение
                 row[f'{str(ins["work_calendar_day"])}'] = value
 
@@ -371,12 +395,14 @@ class Excel:
             dataframe_worker.append(df_with_total.sort_values(by='E', ascending=False))
 
         # Конкатенируем в общий фрейм
-        one_month = pd.concat(dataframe_worker, ignore_index=True)
+        try:
+            one_month = pd.concat(dataframe_worker, ignore_index=True)
+            one_month = one_month[columns_dop]
+        except ValueError:
+            one_month = pd.DataFrame(dataframe_worker)
+
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Finished form a dataframe {month} {year}')
-
-        # Делаем правильный порядок колонок
-        one_month = one_month[columns_dop]
 
         # сбрасываем индексы
         one_month = one_month.reset_index()

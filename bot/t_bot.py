@@ -36,7 +36,7 @@ user = {}
 
 
 # Обработчик команды /start или /help для приветствия пользователя и отправки кнопок
-@bot.message_handler(commands=['start', 'help'])
+@bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name
@@ -94,7 +94,7 @@ def handle_buttons(call):
 
     # отписка от табеля
     elif call.data == "un_sub_worklog" and user['worklog_errors'] == 1:
-        user['worklog_errors'] = 1
+        user['worklog_errors'] = 0
         update('worklog_errors', 0, user_id=call.from_user.id)
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "Подписка успешно отменена ❌")
@@ -117,9 +117,9 @@ def handle_buttons(call):
         update('doccorp_errors', 0, user_id=call.from_user.id)
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "Подписка успешно отменена ❌")
-    elif call.data == "un_sub_worklog" and user['worklog_errors'] == 0:
+    elif call.data == "un_sub_doccorp" and user['worklog_errors'] == 0:
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "Вы не подписаны на эту рассылку ⚠️")
 
 
-
+bot.polling(non_stop=True)

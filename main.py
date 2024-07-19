@@ -36,7 +36,7 @@ def swagger_monkey_patch(*args, **kwargs):
 applications.post_swagger_ui_html = swagger_monkey_patch
 
 app = FastAPI(
-    title='test'
+    title='its-api'
 )
 
 from config import Settings
@@ -47,10 +47,6 @@ JSONObject = Dict[AnyStr, Any]
 JSONArray = List[Any]
 JSONStructure = Union[JSONArray, JSONObject]
 
-from bot.t_bot import bot
-
-bot.polling(non_stop=True)
-
 
 @app.post('/worklog')
 def worklog(url: str, data: JSONStructure = None):
@@ -59,9 +55,9 @@ def worklog(url: str, data: JSONStructure = None):
     global settings
     settings = Settings(_env_file=f'{server}.env')
 
-    requests.post(f'{settings.SERVICE_REST}/service/log/set')
+    requests.post(f'{settings.SERVICE_REST}/service/log/set?url={url}')
     requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=START '
-                  f'ON {url.split("//")[1]}')
+                  f'ON {url.split("//")[1].upper()}')
 
     json_normalized = json.loads(
         requests.post(f'{settings.SERVICE_REST}/logic/normalize?url={url}', json=data).text)
@@ -69,8 +65,7 @@ def worklog(url: str, data: JSONStructure = None):
     json_calculated = json.loads(
         requests.post(f'{settings.SERVICE_REST}/logic/calculate?url={url}', json=json_normalized).text)
 
-    months = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])[
-        'period_month'].to_list()
+    months = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])['period_month'].to_list()
     years = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])['period_year'].to_list()
     months_years = dict(zip(months, years))
 
@@ -83,9 +78,11 @@ def worklog(url: str, data: JSONStructure = None):
         return {'status_code': 200, 'text': 'create excel!'}
 
 
+#
 @app.post('/service/log/set')
-def service_log_set():
-    Logging.log_set()
+def service_log_set(url):
+    server = url.split('.')[0].split('//')[1]
+    Logging.log_set(server)
     return {'OK!'}
 
 
@@ -133,9 +130,11 @@ def normalize(url: str, data: JSONStructure = None):
 
 
 @app.post('/create_exel')
-def excel(url: str, months: Dict[str, int]):
+def excel(url: str, year: Union[str, None] = None, staff: Union[str, None] = None,
+          dep: Union[str, None] = None, months: Union[Dict[str, int], None] = None):
+
     server = url.split('.')[0].split('//')[1]
-    Excel.create_excel(months, server, url)
+    Excel.create_excel(server=server, url=url, months_years=months, years=year, dep=dep, worker=staff)
     return 'OK!'
 
 
@@ -147,6 +146,8 @@ def calc(url: str, data: List[Workers]):
     requests.post(f'{settings.SERVICE_REST}/database/clock?url={url}', json=json_calculated)
     return json_calculated
 
+
+#
 
 @app.post('/service/log')
 def service_log_add(level: int, message: str):
@@ -204,4 +205,3 @@ def database(name: str, url: str, data: List[Workers]):
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
         requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}')
         sys.exit()
-
