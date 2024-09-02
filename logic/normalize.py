@@ -93,8 +93,6 @@ class Normalize:
 
             df_json = df_json.explode('kontrakt_timetracking', ignore_index=True)
 
-            requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Normalize JSON - OK!')
-
             return list(df_json.to_dict('index').values())
 
         except KeyError as key:

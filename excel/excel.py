@@ -1,4 +1,7 @@
+import datetime
 import logging
+import os
+from typing import Union
 
 from openpyxl import Workbook
 from openpyxl.reader.excel import load_workbook
@@ -29,26 +32,49 @@ jira_server: str
 class Excel:
     days_types = {}
     correction_list = []
+    months_all = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь',
+                  'Ноябрь', 'Декабрь']
 
     @classmethod
-    def create_excel(cls, months_years: dict, server: str, url: str):
+    def create_excel(cls, server: str, url: str,
+                     years: Union[str, None] = None,
+                     months_years: Union[dict, None] = None,
+                     worker: Union[str, None] = None,
+                     dep: Union[str, None] = None):
 
         global jira_server
         jira_server = url
         global settings
         settings = Settings(_env_file=f'{server}.env')
 
-        years = list(set(months_years.values()))
+        worker = '' if worker is None else worker
+        dep = '' if dep is None else dep
+
+        if months_years is None and years is None:
+            years = [datetime.date.today().year]
+
+        if months_years is not None and years is None:
+            years = list(set(months_years.values())) if months_years is not None else [years]
+
+        if months_years is None and years is not None:
+            years = years
+
         for year in years:
-            months = [i for i, j in months_years.items() if j == year]
-            cls.insert_months(name=f'{settings.DOC_PATH}{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}', year=year,
-                              months=months, server=server, url=url)
+            months = [i for i, j in months_years.items() if j == year] if months_years is not None else cls.months_all
+            if worker != '':
+                name = f'{settings.DOC_PATH}{settings.DOC_NAME} {worker} {str(year)}{settings.DOC_TYPE}'
+            elif dep != '':
+                name = f'{settings.DOC_PATH}{settings.DOC_NAME} {dep} {str(year)}{settings.DOC_TYPE}'
+            else:
+                name = f'{settings.DOC_PATH}{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}'
+
+            cls.insert_months(name=name, year=year, months=months, server=server, url=url, dep=dep, worker=worker)
 
     @classmethod
-    def insert_months(cls, name: str, year: int, months: list, server: str, url: str):
+    def insert_months(cls, name: str, year: int, months: list, server: str, url: str, dep: str, worker: str):
 
-        data = pd.DataFrame(SyncORM.select_year(ClockJS, year, server, url))
-        data = pd.DataFrame(data)
+        data = pd.DataFrame(
+            SyncORM.select_year(model=ClockJS, year=year, server=server, url=url, dep=dep, worker=worker))
 
         # формируем список, содержащий дубликаты базового контракта
         drop_list = [ind for ind, row in data.iterrows() if row['kontrakt_name'][0] == 'О' and
@@ -69,26 +95,30 @@ class Excel:
             wb = Workbook()
             months = data.drop_duplicates(['period_month', 'period_year'])['period_month'].to_list()
             wb.remove(wb.active)
+
         for month in months:
             # подготавливаем df для вставки в excel
             df_all = cls.df_excel(data, month, year)
 
-            # делаем шапку документа
-            cls.doc_header(wb, month, year)
-
-            # выгружаем df и раскрашиваем все, что нужно
-            cls.beauty(wb, df_all, month, year)
+            # если датафрейм не пустой - то выгружаем, если пустой - то двигаемся к следующему месяцу
+            if not df_all.empty:
+                # делаем шапку документа
+                cls.doc_header(wb, month, year)
+                # выгружаем df и раскрашиваем все, что нужно
+                cls.beauty(wb, df_all, month, year)
 
         wb.save(name)
         wb.close()
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=FINISHED CREATE EXCEL {str(year)}')
 
-        Jira.attach(url, server, f'{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}')
+        Jira.attach(url=url, server=server, name=name)
 
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=ATTACH EXCEL_{str(year)} '
-            f'TO {jira_server.split('//')[1].upper()}')
+            f'TO {jira_server.split("//")[1].upper()}')
+        if dep != '' or worker != '':
+            os.remove(name)
 
     @classmethod
     def df_excel(cls, data, month, year):
@@ -104,6 +134,7 @@ class Excel:
 
         days = data.loc[(data['period_month'] == month) & (data['period_year'] == year)].drop_duplicates(
             ['work_calendar_daytype', 'work_calendar_day'])
+
         cls.days_types = dict(zip(days['work_calendar_day'].to_list(), days['work_calendar_daytype'].to_list()))
 
         # Список с выходными днями (нужен ниже для формул)
@@ -150,12 +181,16 @@ class Excel:
                     cls.correction_list.append((count_shift + 1, ins['work_calendar_day'] + 8))
 
                 # Гиперссылка на карточку сотрудника
-                hyperlink_name = (f'=HYPERLINK("{jira_server}/issues/?jql=summary~%27{ins['job_name']}%27", '
-                                  f'"{ins['job_name']}")')
+                hyperlink_name = (f'=HYPERLINK("{jira_server}/issues/?jql=summary~%27{ins["job_name"]}%27", '
+                                  f'"{ins["job_name"]}")')
+
+                # print(jira_server)
 
                 # Гиперссылка на карточку отдела
                 hyperlink_department = (f'=HYPERLINK("{jira_server}/issues/?jql=status=Трудоустройство and '
-                                        f'cf[14829]=%27{ins['job_department']}%27", "{ins['job_department']}")')
+                                        f'cf[14829]=%27{ins["job_department"]}%27", "{ins["job_department"]}")')
+
+                # hyperlink_department = '=ГИПЕРССЫЛКА(КОДИР.URL("http://jiradev.its-sib.ru/issues/?jql=summary~%27Ковалев Евгений Владимирович%27"); "Ковалев Евгений Владимирович"'
 
                 # Ставим гиперссылку имени на строку с базовым контрактом
                 row['B'] = [hyperlink_name] if ins['kontrakt_name'][0] == 'О' else [ins['job_name']]
@@ -173,38 +208,37 @@ class Excel:
                 if (ins['event'] in ['shift', 'trip', 'permit', 'correction'] and ins['work_time'] > 0
                         and ins['work_calendar_daytype'] == 0 and ins['kontrakt_filter'] != '0'
                         and ins['kontrakt_timetracking'] > 0):
-                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
-                             f'{ins['kontrakt_timetracking']})')
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", '
+                             f'{ins["kontrakt_timetracking"]})')
 
                 # Выставляем shift по заявке в выходной день, если есть filter и worktime > 0.
                 # Например: сменщик работает в воскресенье и выполнял заявки
                 elif (ins['event'] == 'shift' and ins['work_time'] > 0 and ins['work_calendar_daytype'] == 1
                       and ins['kontrakt_filter'] != '0' and ins['kontrakt_timetracking'] > 0):
-                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
-                             f'{ins['kontrakt_timetracking']})')
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", '
+                             f'{ins["kontrakt_timetracking"]})')
 
                 # Выставляем командировку на выходных. Если у человека командировка захватывает выходные,
                 # то это считается выходным, но человек всё еще в командировке, так что нам необходима тут гиперссылка
                 elif ins['event'] == 'trip' and ins['work_calendar_daytype'] == 1:
-                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "В")'
-                    weekend_flag = False
+                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", "В")'
 
                 # Выставляем permit в выходной день
                 elif ins['event'] == 'permit' and ins['work_calendar_daytype'] == 1:
-                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", '
-                             f'{ins['kontrakt_timetracking']})')
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", '
+                             f'{ins["kontrakt_timetracking"]})')
 
                 # Если событие - корректировка и work_time == 0, то значит человек не явился на работу, ставим Н
-                elif ins['work_time'] == 0 and ins['event'] == 'correction' and ins['kontrakt_name'][0] == 'О':
+                elif ins['work_time'] == 0 and ins['event'] == 'correction' and ins["kontrakt_name"][0] == 'О':
                     value = 'Н'
 
                 # Ставим отпуск с гиперссылкой на DOCCORP
                 elif ins['event'] == 'otpusk':
-                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "О")'
+                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", "О")'
 
                 # Ставим отгул с гиперссылкой на DOCCORP
                 elif ins['event'] == 'compensatory':
-                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins['kontrakt_filter']})", "От")'
+                    value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", "От")'
 
                 # Ставим Б, если событие больничный
                 elif ins['event'] == 'hospital':
@@ -220,7 +254,7 @@ class Excel:
                     value = ins['kontrakt_timetracking'] if ins['kontrakt_timetracking'] > 0 else ' '
 
                 # присваиваем значение
-                row[f'{str(ins['work_calendar_day'])}'] = value
+                row[f'{str(ins["work_calendar_day"])}'] = value
 
                 # добавляем в список, для дальнейшей конкатенации
                 rows_worker.append(row)
@@ -244,13 +278,13 @@ class Excel:
             # ставим формулы
             for index, ins in df_rows.iterrows():
                 # Количество смен (день)
-                df_rows.loc[index, 'AN'] = f'=COUNT(I{count_right}:AM{count_right})' if ins['F'] == 'День' else ' '
+                df_rows.loc[index, 'AN'] = f'=COUNT(I{count_right}:AM{count_right})' if ins["F"] == 'День' else ' '
 
                 # Количество смен (ночь)
-                df_rows.loc[index, 'AO'] = f'=COUNT(I{count_right}:AM{count_right})' if ins['F'] == 'Ночь' else ' '
+                df_rows.loc[index, 'AO'] = f'=COUNT(I{count_right}:AM{count_right})' if ins["F"] == 'Ночь' else ' '
 
                 # Отпуск
-                df_rows.loc[index, 'AP'] = f'=COUNTIF(I{count_right}:AM{count_right}, "О")' if ins['E'][
+                df_rows.loc[index, 'AP'] = f'=COUNTIF(I{count_right}:AM{count_right}, "О")' if ins["E"][
                                                                                                    0] == 'О' else ' '
                 # Отгул
                 df_rows.loc[index, 'AQ'] = f'=COUNTIF(I{count_right}:AM{count_right}, "От")' if ins['E'][
@@ -370,12 +404,14 @@ class Excel:
             dataframe_worker.append(df_with_total.sort_values(by='E', ascending=False))
 
         # Конкатенируем в общий фрейм
-        one_month = pd.concat(dataframe_worker, ignore_index=True)
+        try:
+            one_month = pd.concat(dataframe_worker, ignore_index=True)
+            one_month = one_month[columns_dop]
+        except ValueError:
+            one_month = pd.DataFrame(dataframe_worker)
+
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Finished form a dataframe {month} {year}')
-
-        # Делаем правильный порядок колонок
-        one_month = one_month[columns_dop]
 
         # сбрасываем индексы
         one_month = one_month.reset_index()
@@ -500,32 +536,32 @@ class Excel:
 
         ws['A6'].font = column_font
         ws['A6'].alignment = column_alignment
-        ws.column_dimensions['A'].width = value = 4.57
+        ws.column_dimensions['A'].width = 4.57
 
         ws['B6'].font = column_font
         ws['B6'].alignment = column_alignment
-        ws.column_dimensions['B'].width = value = 32.57
+        ws.column_dimensions['B'].width = 32.57
 
         ws['C6'].font = column_font
         ws['C6'].alignment = column_alignment
-        ws.column_dimensions['C'].width = value = 32.57
+        ws.column_dimensions['C'].width = 32.57
 
         ws['D6'].font = column_font
         ws['D6'].alignment = column_alignment
-        ws.column_dimensions['D'].width = value = 22.14
+        ws.column_dimensions['D'].width = 22.14
 
         ws['E6'].font = column_font
         ws['E6'].alignment = column_alignment
-        ws.column_dimensions['E'].width = value = 22.14
+        ws.column_dimensions['E'].width = 22.14
 
         for col in range(6, 9):
             ws.cell(row=6, column=col).font = column_font
             ws.cell(row=6, column=col).alignment = column_alignment_rotation
-            ws.column_dimensions[get_column_letter(col)].width = value = 5
+            ws.column_dimensions[get_column_letter(col)].width = 5
 
         for col in range(9, 40):
             ws.cell(row=6, column=col).font = column_font
-            ws.column_dimensions[get_column_letter(col)].width = value = 3.7
+            ws.column_dimensions[get_column_letter(col)].width = 3.7
 
         ws['AN6'] = "Отработано смен (день)"
         ws['AO6'] = "Отработано смен (ночь)"
@@ -547,7 +583,7 @@ class Excel:
         for col in range(40, 51):
             ws.cell(row=6, column=col).font = column_font
             ws.cell(row=6, column=col).alignment = right_column_alignment
-            ws.column_dimensions[get_column_letter(col)].width = value = 5
+            ws.column_dimensions[get_column_letter(col)].width = 5
             ws.cell(row=6, column=col).fill = beige_fill if col > 45 else green_fill
 
     @classmethod

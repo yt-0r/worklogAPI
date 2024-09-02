@@ -1,6 +1,4 @@
-from typing import Any, Optional, Dict
-
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -15,12 +13,13 @@ class Settings(BaseSettings):
     DOC_TYPE: str
     FTP_USER: str
     FTP_PASS: str
+    BOT_TOKEN: str
+    JIRA_SERVER: str
 
-    def DATABASE_URL_mysqlconnector(self, url):
-        return f"mysql+mysqlconnector://{self.DB_USER}:{self.DB_PASS}@{url}:{self.DB_PORT}/{self.DB_NAME}"
+    def DATABASE_URL_mysqlconnector(self, host):
+        # print(f"mysql+mysqlconnector://{self.DB_USER}:{self.DB_PASS}@{url}:{self.DB_PORT}/{self.DB_NAME}")
+        return f"mysql+mysqlconnector://{self.DB_USER}:{self.DB_PASS}@{host}:{self.DB_PORT}/{self.DB_NAME}"
 
-
-settings = Settings(_env_file='jiradev.env')
 
 # http://jiradev.its-sib.ru/rest/scriptrunner/latest/custom/reportBackup?query=getNew&date=
 # http://jira.its-sib.ru/rest/scriptrunner/latest/custom/getStaffWorklog?query=getNew&date=
