@@ -1,14 +1,11 @@
 import logging
-import sys
 import traceback
+from datetime import datetime
 from typing import List, Dict, Union, AnyStr, Any
 import requests
-import json
 
-import uvicorn
 from fastapi import FastAPI, applications
 from fastapi.openapi.docs import get_swagger_ui_html
-from pydantic import ValidationError
 
 from sqlalchemy.exc import ProgrammingError
 
@@ -25,6 +22,14 @@ from excel.excel import Excel
 from logic.calculate import Calculator
 import pandas as pd
 
+from config import Settings
+
+settings: Settings
+
+JSONObject = Dict[AnyStr, Any]
+JSONArray = List[Any]
+JSONStructure = Union[JSONArray, JSONObject]
+
 
 def swagger_monkey_patch(*args, **kwargs):
     return get_swagger_ui_html(
@@ -39,115 +44,115 @@ app = FastAPI(
     title='its-api'
 )
 
-from config import Settings
-
-settings: Settings
-
-JSONObject = Dict[AnyStr, Any]
-JSONArray = List[Any]
-JSONStructure = Union[JSONArray, JSONObject]
-
 
 @app.post('/worklog')
 def worklog(url: str, data: JSONStructure = None):
     server = url.split('.')[0].split('//')[1]
-
+    # Подгружаем конфиг
     global settings
     settings = Settings(_env_file=f'{server}.env')
 
-    requests.post(f'{settings.SERVICE_REST}/service/log/set?url={url}')
-    requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=START '
-                  f'ON {url.split("//")[1].upper()}')
+    # Настраиваем лог
+    requests.post(f'{settings.SERVICE_REST}/service/log/set?filename={server}_worklog.log')
+    # Пишем в лог
+    requests.post(
+        f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=START ON {url.split("//")[1].upper()}')
 
-    json_normalized = json.loads(
-        requests.post(f'{settings.SERVICE_REST}/logic/normalize?url={url}', json=data).text)
+    # Пишем в файл сырой JSON
+    requests.post(f'{settings.SERVICE_REST}/service/file?url={url}&filename=raw.json', json=data)
 
-    json_calculated = json.loads(
-        requests.post(f'{settings.SERVICE_REST}/logic/calculate?url={url}', json=json_normalized).text)
+    # Нормализуем
+    json_normalize = requests.post(f'{settings.SERVICE_REST}/logic/normalize?url={url}', json=data).json()
+    requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Normalize JSON - OK!')
+    # пишем в файл
+    requests.post(f'{settings.SERVICE_REST}/service/file?url={url}&filename=normalized.json', json=json_normalize)
+    # пишем в raw
+    requests.post(f'{settings.SERVICE_REST}/database/raw?url={url}', json=json_normalize).json()
 
-    months = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])['period_month'].to_list()
-    years = pd.DataFrame(json_calculated).drop_duplicates(['period_month', 'period_year'])['period_year'].to_list()
+    # Калькулируем
+    json_calc = requests.post(f'{settings.SERVICE_REST}/logic/calculate?url={url}', json=json_normalize).json()
+    requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Calc JSON - OK!')
+    # пишем в файл
+    requests.post(f'{settings.SERVICE_REST}/service/file?url={url}&filename=calculated.json', json=json_calc)
+    # пишем в clock
+    requests.post(f'{settings.SERVICE_REST}/database/clock?url={url}', json=json_calc)
+
+    # Делаем словарь из данных
+    months = pd.DataFrame(json_calc).drop_duplicates(['period_month', 'period_year'])['period_month'].to_list()
+    years = pd.DataFrame(json_calc).drop_duplicates(['period_month', 'period_year'])['period_year'].to_list()
     months_years = dict(zip(months, years))
 
-    res = requests.post(f'{settings.SERVICE_REST}/create_exel?url={url}', json=months_years)
+    # Создаём excel
+    res = requests.post(f'{settings.SERVICE_REST}/create_excel?url={url}', json=months_years).json()
 
-    if res.status_code != 200:
-        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}')
-        return {'status_code': 500, 'text': 'internal error !!!!!'}
+    if res['status_code'] != 200:
+        return {'status_code': 500, 'text': 'Internal error !'}
     else:
-        return {'status_code': 200, 'text': 'create excel!'}
+        return {'status_code': 200, 'text': 'Create excel !'}
 
 
 #
 @app.post('/service/log/set')
-def service_log_set(url):
-    server = url.split('.')[0].split('//')[1]
-    Logging.log_set(server)
-    return {'OK!'}
+def service_log_set(filename):
+    Logging.log_set(filename)
+    return {'status_code': 200, 'text': 'Log set OK!'}
 
 
 @app.post('/service/telegram')
-def telegram(server: str):
-    Notification.send_to_telegram(server, 'Ошибка!')
+def telegram(server: str, msg: Union[str, None] = 'Ошибка!'):
+    Notification.send_to_telegram(server, msg)
 
 
 @app.post('/logic/normalize', response_model=List[Workers])
 def normalize(url: str, data: JSONStructure = None):
     server = url.split('.')[0].split('//')[1]
     try:
-
         Normalize.data = data
         json_normalized = Normalize.js_to_norm(server)
-
         json_valid = list(map(lambda i: Workers.model_validate(i).__dict__, json_normalized))
-
-        # пишем в файл
-        requests.post(f'{settings.SERVICE_REST}/service/file?name=raw.json', json=json_valid)
-
-        # пишем в raw
-        requests.post(f'{settings.SERVICE_REST}/database/raw?url={url}', json=json_valid)
-
         return json_valid
-
-    except ValidationError as er:
-
+    except Exception:
         # делаем запрос на конечные точки
-        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={str(er)}')
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
-
         # Отправляем в телегу
-        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}')
-        sys.exit()
-
-    except OSError as er:
-        # делаем запрос на конечные точки
-        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={str(er)}')
-        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
-
-        # Отправляем в телегу
-        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}')
-        sys.exit()
+        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={traceback.format_exc()}')
+        return {'status_code': 500, 'text': 'Normalize Fail!'}
 
 
-@app.post('/create_exel')
-def excel(url: str, year: Union[str, None] = None, staff: Union[str, None] = None,
-          dep: Union[str, None] = None, months: Union[Dict[str, int], None] = None):
-
+@app.post('/create_excel')
+def excel(url: str, year: Union[str, None] = None, staff: Union[str, None] = None, dep: Union[str, None] = None,
+          months: Union[Dict[str, int], None] = None):
     server = url.split('.')[0].split('//')[1]
-    Excel.create_excel(server=server, url=url, months_years=months, years=year, dep=dep, worker=staff)
-    return 'OK!'
+    settings = Settings(_env_file=f'{server}.env')
+    try:
+        Excel.create_excel(server=server, url=url, months_years=months, years=year, dep=dep, worker=staff)
+        return {'status_code': 200, 'text': 'Excel OK!'}
+    except Exception as er:
+        msg = traceback.format_exc() if len(traceback.format_exc()) < 1024 else er
+        # делаем запрос на конечные точки
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
+        # Отправляем в телегу
+        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={msg}')
+        return {'status_code': 500, 'text': 'Excel Fail!'}
 
 
 @app.post('/logic/calculate', response_model=List[Workers])
 def calc(url: str, data: List[Workers]):
-    json_to_calc = [i.__dict__ for i in data]
-    json_calculated = Calculator.calc_workers(json_to_calc)
-    requests.post(f'{settings.SERVICE_REST}/service/file?name=calculated.json', json=json_calculated)
-    requests.post(f'{settings.SERVICE_REST}/database/clock?url={url}', json=json_calculated)
-    return json_calculated
+    server = url.split('.')[0].split('//')[1]
+    try:
+        json_to_calc = [i.__dict__ for i in data]
+        json_calculated = Calculator.calc_workers(json_to_calc)
+        return json_calculated
+    except Exception:
+        # делаем запрос на конечные точки
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
+        # Отправляем в телегу
+        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={traceback.format_exc()}')
+        return {'status_code': 500, 'text': 'Calc Fail!'}
 
-
-#
 
 @app.post('/service/log')
 def service_log_add(level: int, message: str):
@@ -156,18 +161,20 @@ def service_log_add(level: int, message: str):
 
 
 @app.post('/service/file')
-def service_file(data: List[Workers], name: Union[str, None] = '.json'):
-    json_to_record = [i.__dict__ for i in data]
-    JsonFile.record(json_to_record, name)
-    requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Record JSON to {name}')
+def service_file(url: str, filename: Union[str, None] = f'{datetime.now()}.json', data: JSONStructure = None):
+    server = url.split('.')[0].split('//')[1]
+    settings = Settings(_env_file=f'{server}.env')
+
+    JsonFile.record(data, filename)
+    requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Record JSON to {filename}')
     return 'OK!'
 
 
 @app.post('/database/{name}')
 def database(name: str, url: str, data: List[Workers]):
-    data_from_json = [i.__dict__ for i in data]
     server = url.split('.')[0].split('//')[1]
     try:
+        data_from_json = [i.__dict__ for i in data]
         if name == 'raw':
             model = RawJS
 
@@ -176,9 +183,8 @@ def database(name: str, url: str, data: List[Workers]):
 
         try:
             data_from_database = SyncORM.select_data(data_from_json, model, server, url)
-        except ProgrammingError:
-            requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&'
-                          f'ProgrammingError')
+        except ProgrammingError as er:
+            requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message={str(er)}')
             data_from_database = []
 
         # соединяем данные с json и базы
@@ -199,9 +205,12 @@ def database(name: str, url: str, data: List[Workers]):
         # пишем лог
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Update data in {name} database - OK!')
-        return 'OK!'
+        return {'status_code': 200, 'text': 'Database OK!'}
 
     except Exception:
+        # делаем запрос на конечные точки
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
-        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}')
-        sys.exit()
+        requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
+        # Отправляем в телегу
+        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={traceback.format_exc()}')
+        return {'status_code': 500, 'text': 'Database Fail!'}

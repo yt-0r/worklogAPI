@@ -9,12 +9,13 @@ class Notification:
     @staticmethod
     def send_to_telegram(server, msg):
         settings = Settings(_env_file=f'{server}.env')
-        user_id = select('worklog_errors')
-        for i in user_id:
-            url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendDocument"
 
+        # выбираем юзеров, которые подписаны на рассылку worklog_errors
+        user_id = select('worklog_errors')
+        url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendDocument"
+        for i in user_id:
             files = {
-                'document': open(settings.LOG_PATH, 'rb')
+                'document': open(f'{settings.LOG_PATH}{server}_worklog.log', 'rb')
             }
             data = {
                 'chat_id': i,

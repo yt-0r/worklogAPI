@@ -4,9 +4,8 @@ from config import Settings
 
 class Logging:
     @staticmethod
-    def log_set(server):
-        settings = Settings(_env_file=f'{server}.env')
-        logging.basicConfig(filename=settings.LOG_PATH,
+    def log_set(filename):
+        logging.basicConfig(filename=filename,
                             filemode='w',
                             format='[%(asctime)s] [%(levelname)s] => %(message)s',
                             datefmt='%Y-%m-%d %H:%M:%S',

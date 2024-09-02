@@ -31,7 +31,7 @@ def update(col_error, new_value, user_id):
 def select(col_error):
     connection = sqlite3.connect(name, check_same_thread=False)
     cursor = connection.cursor()
-    select_stmt = f'SELECT ID FROM USERS WHERE {col_error}=1'
+    select_stmt = f'SELECT ID FROM USERS WHERE {col_error}={1}'
     res = cursor.execute(select_stmt).fetchall()
     connection.close()
     return res

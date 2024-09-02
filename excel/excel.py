@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 from typing import Union
 
 from openpyxl import Workbook
@@ -60,8 +61,10 @@ class Excel:
 
         for year in years:
             months = [i for i, j in months_years.items() if j == year] if months_years is not None else cls.months_all
-            if worker != '' or dep != '':
-                name = f'{settings.DOC_PATH}{settings.DOC_NAME} {worker}{dep} {str(year)}{settings.DOC_TYPE}'
+            if worker != '':
+                name = f'{settings.DOC_PATH}{settings.DOC_NAME} {worker} {str(year)}{settings.DOC_TYPE}'
+            elif dep != '':
+                name = f'{settings.DOC_PATH}{settings.DOC_NAME} {dep} {str(year)}{settings.DOC_TYPE}'
             else:
                 name = f'{settings.DOC_PATH}{settings.DOC_NAME} {str(year)}{settings.DOC_TYPE}'
 
@@ -97,11 +100,12 @@ class Excel:
             # подготавливаем df для вставки в excel
             df_all = cls.df_excel(data, month, year)
 
-            # делаем шапку документа
-            cls.doc_header(wb, month, year)
-
-            # выгружаем df и раскрашиваем все, что нужно
-            cls.beauty(wb, df_all, month, year)
+            # если датафрейм не пустой - то выгружаем, если пустой - то двигаемся к следующему месяцу
+            if not df_all.empty:
+                # делаем шапку документа
+                cls.doc_header(wb, month, year)
+                # выгружаем df и раскрашиваем все, что нужно
+                cls.beauty(wb, df_all, month, year)
 
         wb.save(name)
         wb.close()
@@ -113,6 +117,8 @@ class Excel:
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=ATTACH EXCEL_{str(year)} '
             f'TO {jira_server.split("//")[1].upper()}')
+        if dep != '' or worker != '':
+            os.remove(name)
 
     @classmethod
     def df_excel(cls, data, month, year):
@@ -178,9 +184,13 @@ class Excel:
                 hyperlink_name = (f'=HYPERLINK("{jira_server}/issues/?jql=summary~%27{ins["job_name"]}%27", '
                                   f'"{ins["job_name"]}")')
 
+                # print(jira_server)
+
                 # Гиперссылка на карточку отдела
                 hyperlink_department = (f'=HYPERLINK("{jira_server}/issues/?jql=status=Трудоустройство and '
                                         f'cf[14829]=%27{ins["job_department"]}%27", "{ins["job_department"]}")')
+
+                # hyperlink_department = '=ГИПЕРССЫЛКА(КОДИР.URL("http://jiradev.its-sib.ru/issues/?jql=summary~%27Ковалев Евгений Владимирович%27"); "Ковалев Евгений Владимирович"'
 
                 # Ставим гиперссылку имени на строку с базовым контрактом
                 row['B'] = [hyperlink_name] if ins['kontrakt_name'][0] == 'О' else [ins['job_name']]
@@ -212,7 +222,6 @@ class Excel:
                 # то это считается выходным, но человек всё еще в командировке, так что нам необходима тут гиперссылка
                 elif ins['event'] == 'trip' and ins['work_calendar_daytype'] == 1:
                     value = f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", "В")'
-                    weekend_flag = False
 
                 # Выставляем permit в выходной день
                 elif ins['event'] == 'permit' and ins['work_calendar_daytype'] == 1:
@@ -527,32 +536,32 @@ class Excel:
 
         ws['A6'].font = column_font
         ws['A6'].alignment = column_alignment
-        ws.column_dimensions['A'].width = value = 4.57
+        ws.column_dimensions['A'].width = 4.57
 
         ws['B6'].font = column_font
         ws['B6'].alignment = column_alignment
-        ws.column_dimensions['B'].width = value = 32.57
+        ws.column_dimensions['B'].width = 32.57
 
         ws['C6'].font = column_font
         ws['C6'].alignment = column_alignment
-        ws.column_dimensions['C'].width = value = 32.57
+        ws.column_dimensions['C'].width = 32.57
 
         ws['D6'].font = column_font
         ws['D6'].alignment = column_alignment
-        ws.column_dimensions['D'].width = value = 22.14
+        ws.column_dimensions['D'].width = 22.14
 
         ws['E6'].font = column_font
         ws['E6'].alignment = column_alignment
-        ws.column_dimensions['E'].width = value = 22.14
+        ws.column_dimensions['E'].width = 22.14
 
         for col in range(6, 9):
             ws.cell(row=6, column=col).font = column_font
             ws.cell(row=6, column=col).alignment = column_alignment_rotation
-            ws.column_dimensions[get_column_letter(col)].width = value = 5
+            ws.column_dimensions[get_column_letter(col)].width = 5
 
         for col in range(9, 40):
             ws.cell(row=6, column=col).font = column_font
-            ws.column_dimensions[get_column_letter(col)].width = value = 3.7
+            ws.column_dimensions[get_column_letter(col)].width = 3.7
 
         ws['AN6'] = "Отработано смен (день)"
         ws['AO6'] = "Отработано смен (ночь)"
@@ -574,7 +583,7 @@ class Excel:
         for col in range(40, 51):
             ws.cell(row=6, column=col).font = column_font
             ws.cell(row=6, column=col).alignment = right_column_alignment
-            ws.column_dimensions[get_column_letter(col)].width = value = 5
+            ws.column_dimensions[get_column_letter(col)].width = 5
             ws.cell(row=6, column=col).fill = beige_fill if col > 45 else green_fill
 
     @classmethod

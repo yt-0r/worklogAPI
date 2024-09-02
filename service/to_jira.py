@@ -1,11 +1,6 @@
-# Стандартные библиотеки
-import os
-# Сторонние библиотеки
-from jira import JIRA
 from config import Settings
-from fastapi import Body
-from fastapi.responses import FileResponse
 from ftplib import FTP
+
 
 
 class Jira:
@@ -14,12 +9,16 @@ class Jira:
     def attach(url, server, name):
         settings = Settings(_env_file=f'{server}.env')
 
-        ftp = FTP(url.split('//')[1])
+        ftp = FTP(settings.JIRA_SERVER)
         ftp.login(user=settings.FTP_USER, passwd=settings.FTP_PASS)
 
-        ftp.cwd('scripts/DIRECTORY/POSTFUNCTIONS/STAFF/WORKLOG/')
+        directory = 'jira/scripts/DIRECTORY/POSTFUNCTIONS/STAFF/WORKLOG' if server == 'jira' \
+            else 'scripts/DIRECTORY/POSTFUNCTIONS/STAFF/WORKLOG'
 
+        ftp.cwd(directory)
+
+        true_name = name.split('/')[-1]
         with open(name, 'rb') as file:
-            ftp.storbinary(f'STOR {name}', file)
+            ftp.storbinary(f'STOR {true_name}', file)
 
         ftp.close()

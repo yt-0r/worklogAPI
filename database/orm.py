@@ -1,6 +1,3 @@
-import logging
-
-import requests
 from sqlalchemy import select, delete
 from sqlalchemy.orm import sessionmaker
 
