@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 import os
 from typing import Union
@@ -46,6 +47,9 @@ class Excel:
         jira_server = url
         global settings
         settings = Settings(_env_file=f'{server}.env')
+
+        with open(f'{server}', 'w', encoding='utf-8') as file:
+            json.dump(jira_server, file, ensure_ascii=False, indent=2)
 
         worker = '' if worker is None else worker
         dep = '' if dep is None else dep
@@ -112,7 +116,7 @@ class Excel:
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=FINISHED CREATE EXCEL {str(year)}')
 
-        Jira.attach(url=url, server=server, name=name)
+        # Jira.attach(url=url, server=server, name=name)
 
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=ATTACH EXCEL_{str(year)} '
