@@ -48,9 +48,6 @@ class Excel:
         global settings
         settings = Settings(_env_file=f'{server}.env')
 
-        with open(f'{server}', 'w', encoding='utf-8') as file:
-            json.dump(jira_server, file, ensure_ascii=False, indent=2)
-
         worker = '' if worker is None else worker
         dep = '' if dep is None else dep
 
@@ -111,8 +108,11 @@ class Excel:
                 # выгружаем df и раскрашиваем все, что нужно
                 cls.beauty(wb, df_all, month, year)
 
+        # делаем активным последний лист
+        last_sheet = wb.get_sheet_by_name(wb.sheetnames[-1])
         wb.save(name)
         wb.close()
+
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=FINISHED CREATE EXCEL {str(year)}')
 
@@ -126,6 +126,9 @@ class Excel:
 
     @classmethod
     def df_excel(cls, data, month, year):
+
+        # data = data[data['job_name'] == 'Скороходов Артем Викторович']
+
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Started form a dataframe {month} {year}')
 
@@ -403,9 +406,10 @@ class Excel:
             total_row['AX'] = [f'=SUM(AX{count_1 - 1}:AX{count_1 - len(df_rows)})']
 
             # Объединяем строки и ИТОГО
-            df_with_total = pd.concat([total_row, df_rows], ignore_index=True).sort_values(by='E', ascending=False)
+            df_with_total = pd.concat([df_rows, total_row], ignore_index=True)
+
             # добавляем в список с другими работниками
-            dataframe_worker.append(df_with_total.sort_values(by='E', ascending=False))
+            dataframe_worker.append(df_with_total)
 
         # Конкатенируем в общий фрейм
         try:

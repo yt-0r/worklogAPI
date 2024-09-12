@@ -130,7 +130,6 @@ class DataKeywords:
         #ФИО Директора--------
         if 'customfield_14907' in issue['fields'] and issue['fields']['customfield_14907'] != None:
             boss = issue['fields']['customfield_14907']
-
             boss = boss.split(" ")
             data_smeta['boss'] = boss
         #---------------------

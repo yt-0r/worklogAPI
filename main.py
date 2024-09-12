@@ -164,7 +164,6 @@ def service_log_add(level: int, message: str):
 def service_file(url: str, filename: Union[str, None] = f'{datetime.now()}.json', data: JSONStructure = None):
     server = url.split('.')[0].split('//')[1]
     settings = Settings(_env_file=f'{server}.env')
-
     JsonFile.record(data, filename)
     requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=Record JSON to {filename}')
     return 'OK!'
