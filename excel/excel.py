@@ -109,14 +109,19 @@ class Excel:
                 cls.beauty(wb, df_all, month, year)
 
         # делаем активным последний лист
-        last_sheet = wb.get_sheet_by_name(wb.sheetnames[-1])
+        last_sheet = wb[wb.sheetnames[-1]]
+        wb.save(name)
+        wb.close()
+
+        wb = load_workbook(name)
+        last_sheet = wb.active
         wb.save(name)
         wb.close()
 
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=FINISHED CREATE EXCEL {str(year)}')
 
-        # Jira.attach(url=url, server=server, name=name)
+        Jira.attach(url=url, server=server, name=name)
 
         requests.post(
             f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=ATTACH EXCEL_{str(year)} '

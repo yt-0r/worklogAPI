@@ -1,16 +1,19 @@
+import json
 import logging
 import traceback
 from datetime import datetime
-from typing import List, Dict, Union, AnyStr, Any
+
+from typing import List, Dict, Union, AnyStr, Any, Annotated
 import requests
 
-from fastapi import FastAPI, applications
+from fastapi import FastAPI, applications, File, UploadFile
 from fastapi.openapi.docs import get_swagger_ui_html
 
 from sqlalchemy.exc import ProgrammingError
 
 from bot.notification import Notification
 from database.orm import SyncORM
+from doccorp.parse_docx import Docx
 from logic.json_manager import JsonManager
 from logic.normalize import Normalize
 from models.json_model import Workers
@@ -21,8 +24,11 @@ from models.database_model import RawJS, ClockJS
 from excel.excel import Excel
 from logic.calculate import Calculator
 import pandas as pd
+import random
 
 from config import Settings
+from doccorp.data_keywords2 import DataKeywords
+from docx import Document
 
 settings: Settings
 
@@ -43,6 +49,57 @@ applications.post_swagger_ui_html = swagger_monkey_patch
 app = FastAPI(
     title='its-api'
 )
+
+
+# админ
+# 194020
+
+# юзер
+# 194036
+@app.post('/redirect')
+def redirect(data: JSONStructure = None):
+    employee = data['job']
+    phone = data['phone']
+    token = 'y24mdilhj78xyv35hzaahrcgo43rlek5hjjpbulv'
+    data_novofon = {
+        "jsonrpc": "2.0",
+        "id": random.randint(1, 1000),
+        "method": "update.employees",
+        "params": {
+            "access_token": token,
+            "id": 194020,
+            "phone_numbers": [
+                {
+                    "phone_number": phone,
+                    "channels_count": 2,
+                    "dial_time": 60,
+                    "status": "active"
+                }
+            ]
+        }
+    }
+    call = requests.post(url='https://dataapi-jsonrpc.novofon.ru/v2.0', json=data_novofon).json()
+    msg = call['error']['message'] if 'error' in call.keys() else f'success redirect to {employee} ({phone})'
+
+    return {'status_code': 200, 'msg': msg}
+
+
+@app.post('/add_page_template')
+def add_page_template(data: JSONStructure = None):
+    to_jira = DataKeywords(data)
+    issue = DataKeywords.issue
+    with open(f'{issue}.json', 'w', encoding='utf-8') as file:
+        json.dump(to_jira.true_json, file, indent=2, ensure_ascii=False)
+    return {'200'}
+
+
+@app.post("/files/")
+def create_file(directory: str, file: Annotated[bytes, File()]):
+    with open('document.docx', 'wb') as fd:
+        fd.write(file)
+        fd.close()
+    text = Docx.valid_docx('document.docx', directory)
+    return text
 
 
 @app.post('/worklog')
