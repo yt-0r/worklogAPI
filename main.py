@@ -1,5 +1,6 @@
+import base64
 import json
-import logging
+import os
 import traceback
 from datetime import datetime
 
@@ -13,28 +14,31 @@ from sqlalchemy.exc import ProgrammingError
 
 from bot.notification import Notification
 from database.orm import SyncORM
+from doccorp.create_doc import DoccorpTemplate
 from doccorp.parse_docx import Docx
 from logic.json_manager import JsonManager
 from logic.normalize import Normalize
 from models.json_model import Workers
-from service.to_log import Logging
 from service.to_file import JsonFile
 
 from models.database_model import RawJS, ClockJS
-from excel.excel import Excel
+from my_excel.excels import Excel
 from logic.calculate import Calculator
 import pandas as pd
 import random
-
+from docxtpl import DocxTemplate
 from config import Settings
 from doccorp.data_keywords2 import DataKeywords
-from docx import Document
+
+from service.to_log import Logging
 
 settings: Settings
 
 JSONObject = Dict[AnyStr, Any]
 JSONArray = List[Any]
 JSONStructure = Union[JSONArray, JSONObject]
+
+import logging
 
 
 def swagger_monkey_patch(*args, **kwargs):
@@ -50,56 +54,122 @@ app = FastAPI(
     title='its-api'
 )
 
+REST = 'http://127.0.0.1:8000'
+
 
 # админ
 # 194020
 
-# юзер
+# оператор2
 # 194036
+
 @app.post('/redirect')
 def redirect(data: JSONStructure = None):
-    employee = data['job']
-    phone = data['phone']
-    token = 'y24mdilhj78xyv35hzaahrcgo43rlek5hjjpbulv'
-    data_novofon = {
-        "jsonrpc": "2.0",
-        "id": random.randint(1, 1000),
-        "method": "update.employees",
-        "params": {
-            "access_token": token,
-            "id": 194020,
-            "phone_numbers": [
-                {
-                    "phone_number": phone,
-                    "channels_count": 2,
-                    "dial_time": 60,
-                    "status": "active"
-                }
-            ]
-        }
-    }
-    call = requests.post(url='https://dataapi-jsonrpc.novofon.ru/v2.0', json=data_novofon).json()
-    msg = call['error']['message'] if 'error' in call.keys() else f'success redirect to {employee} ({phone})'
+    try:
+        requests.post(f'{REST}/service/log/set?cfg=redirect')
+        requests.post(f'{REST}/service/file?url=http://jira.its-sib.ru&filename=redirect.json', json=data)
 
-    return {'status_code': 200, 'msg': msg}
+        employee = data['staff']
+        phone = str(data['telephone'])
+
+        if data['department'] == 'Отдел 1-ой линии технической поддержки':
+            user_id = 194036
+
+            token = 'y24mdilhj78xyv35hzaahrcgo43rlek5hjjpbulv'
+            data_novofon = {
+                "jsonrpc": "2.0",
+                "id": random.randint(1, 1000),
+                "method": "update.employees",
+                "params": {
+                    "access_token": token,
+                    "id": user_id,
+                    "phone_numbers": [
+                        {
+                            "phone_number": phone,
+                            "channels_count": 2,
+                            "dial_time": 60,
+                            "status": "active"
+                        }
+                    ]
+                }
+            }
+
+            if user_id == 194036:
+                call = requests.post(url='https://dataapi-jsonrpc.novofon.ru/v2.0', json=data_novofon).json()
+                if 'error' in call.keys():
+                    msg = call['error']['message']
+                    requests.post(f'{REST}/service/log?level={logging.ERROR}&message={msg}')
+                    return {'status_code': 500, 'text': msg}
+                else:
+                    msg = f'success redirect to {employee} ({data["telephone"]})'
+                    requests.post(f'{REST}/service/log?level={logging.INFO}&message={msg}')
+                    return {'status_code': 200, 'text': msg}
+        else:
+            msg = f'NO REDIRECT TO {employee} ({data["telephone"]})'
+            requests.post(f'{REST}/service/log?level={logging.INFO}&message={msg}')
+            return {'status_code': 200, 'text': msg}
+
+    except Exception:
+        requests.post(f'{REST}/service/telegram?server=jira&msg={traceback.format_exc()}')
+        return {'status_code': 500, 'text': 'error'}
 
 
 @app.post('/add_page_template')
-def add_page_template(data: JSONStructure = None):
-    to_jira = DataKeywords(data)
-    issue = DataKeywords.issue
-    with open(f'{issue}.json', 'w', encoding='utf-8') as file:
-        json.dump(to_jira.true_json, file, indent=2, ensure_ascii=False)
-    return {'200'}
+def add_page_template(data: JSONStructure):
+    requests.post(f'{REST}/service/log/set?cfg=doc')
 
+    directory = data['issue']
 
-@app.post("/files/")
-def create_file(directory: str, file: Annotated[bytes, File()]):
-    with open('document.docx', 'wb') as fd:
-        fd.write(file)
+    # Декодируем строку Base64
+
+    requests.post(f'{REST}/service/log?level={logging.INFO}&message=START VALIDATE {directory}')
+
+    decoded_bytes = base64.b64decode(data['template'])
+    with open(f'templates/{directory}.docx', 'wb') as fd:
+        fd.write(decoded_bytes)
         fd.close()
-    text = Docx.valid_docx('document.docx', directory)
+
+    text = Docx.valid_docx(f'templates/{directory}.docx', directory)
+
+    if text['validation'] == 'failed':
+        os.remove(f'templates/{directory}.docx')
+        requests.post(f'{REST}/service/log?level={logging.INFO}&message=VALIDATE {directory} - FAILED')
+
+    else:
+        requests.post(f'{REST}/service/log?level={logging.INFO}&message=VALIDATE {directory} - SUCCESS ')
     return text
+
+
+@app.post('/valid_json')
+def valid_json(data: JSONStructure = None):
+    requests.post(f'{REST}/service/log/set?cfg=doc')
+    to_jira = DataKeywords(data)
+    issue = DataKeywords.issuekey
+    requests.post(f'{REST}/service/file?url=http://jira.its-sib.ru&filename={issue}.json', json=to_jira.true_json)
+    return to_jira.true_json
+
+
+@app.post("/create_doc")
+def create_file(data: JSONStructure = None):
+
+    to_doc = DataKeywords(data)
+    issue = DataKeywords.issuekey
+
+    with open('templates/query.json', 'w', encoding='utf-8') as file:
+        json.dump(data, file, indent=2, ensure_ascii=False)
+
+    render_dict = {}
+    for method in to_doc.true_json:
+        for var in method['var']:
+            render_dict[var['var'].split(' ')[-1]] = var['value']
+
+    with open('templates/render_dict.json', 'w', encoding='utf-8') as file:
+        json.dump(render_dict, file, indent=2, ensure_ascii=False)
+
+    doccorp = DoccorpTemplate(issue)
+    result = doccorp.my_render(render_dict)
+
+    return {'issuekey': issue, 'pdf': result}
 
 
 @app.post('/worklog')
@@ -109,8 +179,8 @@ def worklog(url: str, data: JSONStructure = None):
     global settings
     settings = Settings(_env_file=f'{server}.env')
 
-    # Настраиваем лог
-    requests.post(f'{settings.SERVICE_REST}/service/log/set?filename={server}_worklog.log')
+    requests.post(f'{settings.SERVICE_REST}/service/log/set?cfg={server}_worklog')
+
     # Пишем в лог
     requests.post(
         f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=START ON {url.split("//")[1].upper()}')
@@ -139,19 +209,18 @@ def worklog(url: str, data: JSONStructure = None):
     years = pd.DataFrame(json_calc).drop_duplicates(['period_month', 'period_year'])['period_year'].to_list()
     months_years = dict(zip(months, years))
 
-    # Создаём excel
+    # Создаём my_excel
     res = requests.post(f'{settings.SERVICE_REST}/create_excel?url={url}', json=months_years).json()
 
     if res['status_code'] != 200:
         return {'status_code': 500, 'text': 'Internal error !'}
     else:
-        return {'status_code': 200, 'text': 'Create excel !'}
+        return {'status_code': 200, 'text': 'Create my_excel !'}
 
 
-#
 @app.post('/service/log/set')
-def service_log_set(filename):
-    Logging.log_set(filename)
+def service_log_set(cfg):
+    Logging(cfg)
     return {'status_code': 200, 'text': 'Log set OK!'}
 
 

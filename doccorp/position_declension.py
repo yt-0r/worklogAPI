@@ -5,23 +5,35 @@ from pymorphy3 import MorphAnalyzer
 
 class PymorphyPos:
     position_dict = {'managerPosition': 'руководитель', 'workerPosition': 'работник', 'bossPosition': 'директор'}
-    true_dict = {}
+    true_list = []
 
-    def __init__(self, position, var):
-        self.var = var
-        self.position = PymorphyPos.position_dict[self.var] if position is None else position
+    def __init__(self, record):
+        self.id = record['id']
+        self.short_id = record['id'].split('_')[-1]
+        self.name = record['name']
+        self.value = record['value'] if 'value' in record else 'работник'
+
         self.__nominative_case_position()
         self.__dative_case_position()
         self.__parent_case_position()
 
     def __dative_case_position(self):
-        PymorphyPos.true_dict[f'{self.var}_dativeCase'] = self.__declination(position=self.position, case=Case.DATIVE)
+        PymorphyPos.true_list.append({'id': self.id,
+                                      'var': f'dative_{self.short_id}',
+                                      'name': self.name,
+                                      'value': self.__declination(position=self.value, case=Case.DATIVE)})
 
     def __parent_case_position(self):
-        PymorphyPos.true_dict[f'{self.var}_parentCase'] = self.__declination(position=self.position, case=Case.GENITIVE)
+        PymorphyPos.true_list.append({'id': self.id,
+                                      'var': f'parent_{self.short_id}',
+                                      'name': self.name,
+                                      'value': self.__declination(position=self.value, case=Case.GENITIVE)})
 
     def __nominative_case_position(self):
-        PymorphyPos.true_dict[f'{self.var}_nominative'] = f'{self.position[0].lower()}{self.position[1:]}'
+        PymorphyPos.true_list.append({'id': self.id,
+                                      'var': f'nominat_{self.short_id}',
+                                      'name': self.name,
+                                      'value': f'{self.value[0].lower()}{self.value[1:]}'})
 
     @staticmethod
     def __declination(position, case):

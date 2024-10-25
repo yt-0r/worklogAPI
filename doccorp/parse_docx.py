@@ -9,11 +9,11 @@ class Docx:
 
     @classmethod
     def valid_docx(cls, filename, directory):
-
-        cls.true_json['Issue'] = directory
+        cls.true_json: dict
+        cls.true_json['issuekey'] = directory
 
         vars_docx = cls.__getText(filename)
-        vars_json = cls.__getVar(directory)
+        vars_json = cls.__getJson(directory)
 
         error_list = []
 
@@ -24,27 +24,51 @@ class Docx:
 
         # если список не пустой, то вернем json об ошибке
         if error_list:
-            cls.true_json['Validation'] = 'failed'
-            cls.true_json['Var'] = {var: "not found" for var in error_list}
+            cls.true_json['validation'] = 'failed'
+            cls.true_json['fields'] = {var: 'не найдено' for var in error_list}
 
         else:
-            # отсекаем сюда переменные из jira
-            jira_vars = list(set([var.split('_') for var in vars_docx]))
+            cls.true_json['validation'] = 'success'
+            cls.true_json['fields'] = {}
+
+            with open(f'jsons/{directory}.json', 'r', encoding='utf-8') as file:
+                json_blocks_vars = json.load(file)
+
+            # отсекаем сюда переменные из шаблона
+            vars_docx = list(set([f'customfield_{var.split("_")[-1]}' for var in vars_docx]))
+
+            # возвращаем Женьку красивую структуру
+
+            yet_list = []
+            result_list = []
+            for block in json_blocks_vars:
+                temp_list = []
+                for var in block['var']:
+                    if var['id'] in vars_docx and var['id'] not in yet_list:
+                        yet_list.append(var['id'])
+                        var.pop('var')
+                        var.pop('value')
+                        temp_list.append(var)
+
+                cls.true_json['fields'][block['method']] = temp_list
 
         return cls.true_json
 
     @staticmethod
-    def __getVar(directory: str):
-        with open(f'{directory}.json', 'r', encoding='utf-8') as file:
+    def __getJson(directory: str):
+        with open(f'jsons/{directory}.json', 'r', encoding='utf-8') as file:
             json_vars = json.load(file)
         list_vars = []
         for record in json_vars:
-            list_vars.extend([var for var in record['var']])
+            list_vars.extend([var['var'].split(' ')[-1] for var in record['var']])
+
         return list_vars
 
     @staticmethod
     def __getText(filename: str):
         text = docx2txt.process(filename)
-        matches = re.findall(r"{{(.*)}}", text)
+
+        matches = re.findall(r"\{\{(.*?)\}\}", text)
+        matches = [s.split(' ')[-1] for s in matches]
 
         return matches

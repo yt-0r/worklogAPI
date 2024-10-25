@@ -65,7 +65,7 @@ def send_my_channels(message):
 
     worklog = 'Активна ✅' if user['worklog_errors'] == 1 else 'Неактивна ❌'
     doccorp = 'Активна ✅' if user['doccorp_errors'] == 1 else 'Неактивна ❌'
-    bot.send_message(message.chat.id, f"Мои подписки 👀\nТабель: {worklog} \nКадровые документы: {doccorp}",
+    bot.send_message(message.chat.id, f"Мои подписки 👀\n📗 Табель: {worklog} \n📑 Кадровые документы: {doccorp}",
                      parse_mode='HTML')
 
 

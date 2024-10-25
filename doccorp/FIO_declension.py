@@ -4,14 +4,13 @@ from pytrovich.maker import PetrovichDeclinationMaker
 
 
 class PytrovichFIO:
+    true_list = []
 
-    names = {'worker': 'Иванов Иван Иванович', 'boss': 'Петров Петр Петрович', 'manager': 'Алексеев Алексей Алексеевич'}
-    true_dict = {}
-
-    def __init__(self, name, var):
-
-        self.var = var
-        self.full_name = PytrovichFIO.names[var] if name is None else name
+    def __init__(self, record):
+        self.id = record['id']
+        self.short_id = record['id'].split('_')[-1]
+        self.name = record['name']
+        self.value = record['value'].split('_pk_')[0] if 'value' in record else 'Иванов Иван Иванович'
         self.__nominative_case_long()
         self.__nominative_case_short()
         self.__parent_case_long()
@@ -20,37 +19,57 @@ class PytrovichFIO:
         self.__dative_case_short()
 
     def __nominative_case_long(self):
-        PytrovichFIO.true_dict[f'{self.var}_fullName'] = self.full_name
+        PytrovichFIO.true_list.append({'id': self.id,
+                                       'var': f'nominat_{self.short_id}',
+                                       'name': self.name,
+                                       'value': self.value})
 
     def __parent_case_long(self):
-        PytrovichFIO.true_dict[f'{self.var}_parentCaseLongName'] = self.__pytrovich(name=self.full_name, case=Case.GENITIVE)
+        PytrovichFIO.true_list.append({'id': self.id,
+                                       'var': f'parent_{self.short_id}',
+                                       'name': self.name,
+                                       'value': self.__pytrovich(name=self.value, case=Case.GENITIVE)})
 
     def __dative_case_long(self):
-        PytrovichFIO.true_dict[f'{self.var}_dativeCaseLongName'] = self.__pytrovich(name=self.full_name, case=Case.DATIVE)
+        PytrovichFIO.true_list.append({'id': self.id,
+                                       'var': f'dative_{self.short_id}',
+                                       'name': self.name,
+                                       'value': self.__pytrovich(name=self.value, case=Case.DATIVE)})
 
     def __nominative_case_short(self):
-        temp_name = self.full_name
+        temp_name = self.value
         first_name = temp_name.split(' ')[1]
         last_name = temp_name.split(' ')[0]
         middle_name = temp_name.split(' ')[-1]
 
-        PytrovichFIO.true_dict[f'{self.var}_fullNameShort'] = f'{last_name} {first_name[0]}.{middle_name[0]}'
+        PytrovichFIO.true_list.append({'id': self.id,
+                                       'var': f'short1_{self.short_id}',
+                                       'name': self.name,
+                                       'value': f'{last_name} {first_name[0]}.{middle_name[0]}'})
 
     def __parent_case_short(self):
-        temp_name = self.__pytrovich(name=self.full_name, case=Case.GENITIVE)
+        temp_name = self.__pytrovich(name=self.value, case=Case.GENITIVE)
         first_name = temp_name.split(' ')[1]
         last_name = temp_name.split(' ')[0]
         middle_name = temp_name.split(' ')[-1]
 
-        PytrovichFIO.true_dict[f'{self.var}_parentCaseShortName'] = f'{last_name} {first_name[0]}.{middle_name[0]}'
+        PytrovichFIO.true_list.append({'id': self.id,
+                                       'var': f'short2_{self.short_id}',
+                                       'name': self.name,
+                                       'value': f'{last_name} {first_name[0]}.{middle_name[0]}'})
 
     def __dative_case_short(self):
-        temp_name = self.__pytrovich(name=self.full_name, case=Case.DATIVE)
+        temp_name = self.__pytrovich(name=self.value, case=Case.DATIVE)
         first_name = temp_name.split(' ')[1]
         last_name = temp_name.split(' ')[0]
         middle_name = temp_name.split(' ')[-1]
 
-        PytrovichFIO.true_dict[f'{self.var}_dativeCaseShortName'] = f'{last_name} {first_name[0]}.{middle_name[0]}'
+        PytrovichFIO.true_list.append({'id': self.id,
+                                       'var': f'short3_{self.short_id}',
+                                       'name': self.name,
+                                       'value': f'{last_name} {first_name[0]}.{middle_name[0]}'})
+
+
 
     @staticmethod
     def __pytrovich(name, case):

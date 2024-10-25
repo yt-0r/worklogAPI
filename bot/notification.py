@@ -15,7 +15,7 @@ class Notification:
         url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendDocument"
         for i in user_id:
             files = {
-                'document': open(f'{settings.LOG_PATH}{server}_worklog.log', 'rb')
+                'document': open(f'{settings.LOG_PATH}/all.log', 'rb')
             }
             data = {
                 'chat_id': i,

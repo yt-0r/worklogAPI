@@ -29,6 +29,8 @@ pd.options.mode.chained_assignment = None
 settings: Settings
 jira_server: str
 
+YET = []
+
 
 class Excel:
     days_types = {}
@@ -47,6 +49,8 @@ class Excel:
         jira_server = url
         global settings
         settings = Settings(_env_file=f'{server}.env')
+
+        requests.post(f'{settings.SERVICE_REST}/service/log/set?cfg={server}_worklog')
 
         worker = '' if worker is None else worker
         dep = '' if dep is None else dep
@@ -97,8 +101,13 @@ class Excel:
             months = data.drop_duplicates(['period_month', 'period_year'])['period_month'].to_list()
             wb.remove(wb.active)
 
-        for month in months:
-            # подготавливаем df для вставки в excel
+        current_positions_months = []
+        for month in Excel.months_all:
+            if month in months:
+                current_positions_months.append(month)
+
+        for month in current_positions_months:
+            # подготавливаем df для вставки в my_excel
             df_all = cls.df_excel(data, month, year)
 
             # если датафрейм не пустой - то выгружаем, если пустой - то двигаемся к следующему месяцу
@@ -108,13 +117,6 @@ class Excel:
                 # выгружаем df и раскрашиваем все, что нужно
                 cls.beauty(wb, df_all, month, year)
 
-        # делаем активным последний лист
-        last_sheet = wb[wb.sheetnames[-1]]
-        wb.save(name)
-        wb.close()
-
-        wb = load_workbook(name)
-        last_sheet = wb.active
         wb.save(name)
         wb.close()
 
@@ -180,8 +182,13 @@ class Excel:
             # счётчик - нужен для формул ниже
             count_shift = count_1
 
+            # список для формул командировок
+            trip_list = []
+
             # лист, куда будем добавлять подготовленные строки
             rows_worker = []
+
+            count_trip = count_1 + 1
 
             # обрабатываем построчно каждую запись фрейма работника
             for _, ins in worker_to_insert.iterrows():
@@ -196,8 +203,6 @@ class Excel:
                 hyperlink_name = (f'=HYPERLINK("{jira_server}/issues/?jql=summary~%27{ins["job_name"]}%27", '
                                   f'"{ins["job_name"]}")')
 
-                # print(jira_server)
-
                 # Гиперссылка на карточку отдела
                 hyperlink_department = (f'=HYPERLINK("{jira_server}/issues/?jql=status=Трудоустройство and '
                                         f'cf[14829]=%27{ins["job_department"]}%27", "{ins["job_department"]}")')
@@ -209,7 +214,6 @@ class Excel:
 
                 # Ставим гиперссылку отдела на строку с базовым контрактом
                 row['C'] = [hyperlink_department] if ins['kontrakt_name'][0] == 'О' else [ins['job_department']]
-
                 row['D'] = [ins['job_position']]
                 row['E'] = [ins['kontrakt_name']]
                 row['F'] = ['День' if ins['day_night'] == 'day' else 'Ночь']
@@ -220,14 +224,18 @@ class Excel:
                 if (ins['event'] in ['shift', 'trip', 'permit', 'correction'] and ins['work_time'] > 0
                         and ins['work_calendar_daytype'] == 0 and ins['kontrakt_filter'] != '0'
                         and ins['kontrakt_timetracking'] > 0):
-                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", '
+
+                    filters = ','.join(list(set(ins['kontrakt_filter'].split(','))))
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({filters})", '
                              f'{ins["kontrakt_timetracking"]})')
 
                 # Выставляем shift по заявке в выходной день, если есть filter и worktime > 0.
                 # Например: сменщик работает в воскресенье и выполнял заявки
                 elif (ins['event'] == 'shift' and ins['work_time'] > 0 and ins['work_calendar_daytype'] == 1
                       and ins['kontrakt_filter'] != '0' and ins['kontrakt_timetracking'] > 0):
-                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({ins["kontrakt_filter"]})", '
+
+                    filters = ','.join(list(set(ins['kontrakt_filter'].split(','))))
+                    value = (f'=HYPERLINK("{jira_server}/issues/?jql=issue in ({filters})", '
                              f'{ins["kontrakt_timetracking"]})')
 
                 # Выставляем командировку на выходных. Если у человека командировка захватывает выходные,
@@ -278,7 +286,7 @@ class Excel:
             # добиваем пустыми данными дни
             for column in columns.keys():
                 if str(column) not in df_rows.columns.values.tolist():
-                    df_rows[f'{str(column)}'] = ' '
+                    df_rows[f'{str(column)}'] = None
 
             # Создаем колонки с AN по AX (Там будут формулы)
             for column in [f'A{chr(i)}' for i in range(78, 89)]:
@@ -289,6 +297,7 @@ class Excel:
 
             # ставим формулы
             for index, ins in df_rows.iterrows():
+
                 # Количество смен (день)
                 df_rows.loc[index, 'AN'] = f'=COUNT(I{count_right}:AM{count_right})' if ins["F"] == 'День' else ' '
 
@@ -307,9 +316,24 @@ class Excel:
                 # Неявка
                 df_rows.loc[index, 'AS'] = f'=COUNTIF(I{count_right}:AM{count_right}, "Н")' if ins['E'][
                                                                                                    0] == 'О' else ' '
-                # Кол-во командировок (Если человек на выходных в командировке - то же считаем)
-                df_rows.loc[index, 'AT'] = (f'=COUNTIF(I{count_right}:AM{count_right}, "В") + '
-                                            f'SUM(I{count_right}:AM{count_right})/8') if ins['G'] == 'К-ка' else ' '
+                # тут дикая формула для командировок
+                if ins['G'] == 'К-ка':
+                    df_trip_worker = df_rows[df_rows['G'] == 'К-ка']
+                    true_formula = []
+                    for working_day in range(1, 31):
+                        temp_series = df_trip_worker[str(working_day)]
+                        coefficient = 0
+                        cell = 0
+                        for record in temp_series:
+                            if record is not None:
+                                coefficient += 1
+                                cell = f'{columns[working_day]}{count_right}'
+                        if coefficient != 0 and cell != 0:
+                            true_formula.append(f'(COUNTIF({cell}, "В")/{coefficient} + SUM({cell})/8)')
+                    df_rows.loc[index, 'AT'] = '=' + '+'.join(true_formula)
+
+                # df_rows.loc[index, 'AT'] = (f'=COUNTIF(I{count_right}:AM{count_right}, "В") + '
+                #                             f'SUM(I{count_right}:AM{count_right})/8') if ins['G'] == 'К-ка' else ' '
 
                 # Кол-во отработанных часов (день)
                 df_rows.loc[index, 'AU'] = f'=SUM(I{count_right}:AM{count_right})' if ins['F'] == 'День' else ' '
