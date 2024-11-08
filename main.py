@@ -68,7 +68,6 @@ def redirect(data: JSONStructure = None):
     try:
         requests.post(f'{REST}/service/log/set?cfg=redirect')
         requests.post(f'{REST}/service/file?url=http://jira.its-sib.ru&filename=redirect.json', json=data)
-
         employee = data['staff']
         phone = str(data['telephone'])
 
@@ -94,47 +93,42 @@ def redirect(data: JSONStructure = None):
                 }
             }
 
-            if user_id == 194036:
-                call = requests.post(url='https://dataapi-jsonrpc.novofon.ru/v2.0', json=data_novofon).json()
-                if 'error' in call.keys():
-                    msg = call['error']['message']
-                    requests.post(f'{REST}/service/log?level={logging.ERROR}&message={msg}')
-                    return {'status_code': 500, 'text': msg}
-                else:
-                    msg = f'success redirect to {employee} ({data["telephone"]})'
-                    requests.post(f'{REST}/service/log?level={logging.INFO}&message={msg}')
-                    return {'status_code': 200, 'text': msg}
+            call = requests.post(url='https://dataapi-jsonrpc.novofon.ru/v2.0', json=data_novofon).json()
+            if 'error' in call.keys():
+                msg = call['error']['message']
+                requests.post(f'{REST}/service/log?level={logging.ERROR}&message={msg}')
+                requests.post(f'{REST}/service/telegram?server=jira&msg={msg}&kind=red')
+                return {'status_code': 500, 'text': msg}
+            else:
+                msg = f'success redirect to {employee} ({data["telephone"]})'
+                requests.post(f'{REST}/service/log?level={logging.INFO}&message={msg}')
+                return {'status_code': 200, 'text': msg}
         else:
             msg = f'NO REDIRECT TO {employee} ({data["telephone"]})'
             requests.post(f'{REST}/service/log?level={logging.INFO}&message={msg}')
             return {'status_code': 200, 'text': msg}
 
     except Exception:
-        requests.post(f'{REST}/service/telegram?server=jira&msg={traceback.format_exc()}')
+        requests.post(f'{REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
+        requests.post(f'{REST}/service/telegram?server=jira&msg={traceback.format_exc()}&kind=red')
         return {'status_code': 500, 'text': 'error'}
 
 
 @app.post('/add_page_template')
 def add_page_template(data: JSONStructure):
     requests.post(f'{REST}/service/log/set?cfg=doc')
-
     directory = data['issue']
 
     # Декодируем строку Base64
-
     requests.post(f'{REST}/service/log?level={logging.INFO}&message=START VALIDATE {directory}')
-
     decoded_bytes = base64.b64decode(data['template'])
     with open(f'templates/{directory}.docx', 'wb') as fd:
         fd.write(decoded_bytes)
         fd.close()
-
     text = Docx.valid_docx(f'templates/{directory}.docx', directory)
-
     if text['validation'] == 'failed':
         os.remove(f'templates/{directory}.docx')
         requests.post(f'{REST}/service/log?level={logging.INFO}&message=VALIDATE {directory} - FAILED')
-
     else:
         requests.post(f'{REST}/service/log?level={logging.INFO}&message=VALIDATE {directory} - SUCCESS ')
     return text
@@ -143,33 +137,76 @@ def add_page_template(data: JSONStructure):
 @app.post('/valid_json')
 def valid_json(data: JSONStructure = None):
     requests.post(f'{REST}/service/log/set?cfg=doc')
-    to_jira = DataKeywords(data)
-    issue = DataKeywords.issuekey
-    requests.post(f'{REST}/service/file?url=http://jira.its-sib.ru&filename={issue}.json', json=to_jira.true_json)
-    return to_jira.true_json
+    requests.post(f'{REST}/service/file?url=http://jira.its-sib.ru&filename=test.json', json=data)
+    issue = data[0]['issuekey']
+    requests.post(f'{REST}/service/log?level={logging.INFO}&message=START FORM INSTRUCTION FOR {issue} OK!')
+    try:
+        to_jira = DataKeywords(data)
+        issue = DataKeywords.issuekey
+        requests.post(f'{REST}/service/log?level={logging.INFO}&message=INSTRUCTION FOR {issue} OK!')
+        requests.post(f'{REST}/service/file?url=http://jira.its-sib.ru&filename={issue}.json', json=to_jira.true_json)
+        return to_jira.true_json
+    except Exception:
+        requests.post(f'{REST}/service/log?level={logging.ERROR}&message=INSTRUCTION FOR {issue} FAILED!')
+        requests.post(f'{REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
+        requests.post(f'{REST}/service/telegram?server=jira&msg={traceback.format_exc()}&kind=doc')
+        return {'status_code': 500, 'msg': 'internal error!'}
 
 
 @app.post("/create_doc")
 def create_file(data: JSONStructure = None):
+    requests.post(f'{REST}/service/log/set?cfg=doc')
+    requests.post(f'{REST}/service/file?url=http://jira.its-sib.ru&filename=query.json', json=data)
 
     to_doc = DataKeywords(data)
     issue = DataKeywords.issuekey
 
-    with open('templates/query.json', 'w', encoding='utf-8') as file:
-        json.dump(data, file, indent=2, ensure_ascii=False)
+    requests.post(f'{REST}/service/log?level={logging.INFO}&message=START CREATE {issue} FILE')
 
     render_dict = {}
     for method in to_doc.true_json:
         for var in method['var']:
             render_dict[var['var'].split(' ')[-1]] = var['value']
 
-    with open('templates/render_dict.json', 'w', encoding='utf-8') as file:
-        json.dump(render_dict, file, indent=2, ensure_ascii=False)
+    requests.post(f'{REST}/service/file?url=http://jira.its-sib.ru&filename=render_dict.json', json=render_dict)
+    try:
+        doccorp = DoccorpTemplate(issue)
+        result = doccorp.my_render(render_dict)
+        requests.post(f'{REST}/service/log?level={logging.ERROR}&message=SUCCESS CREATE {issue} FILE!')
+        return {'issuekey': issue, 'pdf': result}
+    except Exception:
+        requests.post(f'{REST}/service/log?level={logging.ERROR}&message=FAILED CREATE {issue} FILE!')
+        requests.post(f'{REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
+        requests.post(f'{REST}/service/telegram?server=jira&msg={traceback.format_exc()}&kind=doc')
+        return {'status_code': 500, 'msg': 'error!'}
 
-    doccorp = DoccorpTemplate(issue)
-    result = doccorp.my_render(render_dict)
 
-    return {'issuekey': issue, 'pdf': result}
+@app.post('/add_calendar')
+def calendar(data: JSONStructure = None):
+    calendar: dict
+    calendar = data
+    list_free = []
+    list_work = []
+    for month in calendar:
+        for day in month['days']:
+            if '-' in day:
+                list_free.append(f'{day.split("-")[0]}.{month["month"]}.{month["year"]}')
+            elif '+' in day and '*' in day:
+                list_work.append(f'{day.split("+")[-1].split("*")[0]}.{month["month"]}.{month["year"]}')
+            elif '+' in day:
+                list_work.append(f'{day.split("+")[-1]}.{month["month"]}.{month["year"]}')
+            elif '*' in day:
+                list_work.append(f'{day.split("*")[0]}.{month["month"]}.{month["year"]}')
+            else:
+                list_free.append(f'{day}.{month["month"]}.{month["year"]}')
+
+    list_work = [datetime.strptime(date_str, "%d.%m.%Y").strftime("%d.%m.%Y") for date_str in list_work]
+    list_free = [datetime.strptime(date_str, "%d.%m.%Y").strftime("%d.%m.%Y") for date_str in list_free]
+
+    json_to_rec = {'weekends': list_free, 'workings': list_work}
+
+    with open('jsons/calendar.json', 'w', encoding='utf-8') as file:
+        json.dump(json_to_rec, file, indent=2, ensure_ascii=False)
 
 
 @app.post('/worklog')
@@ -225,8 +262,8 @@ def service_log_set(cfg):
 
 
 @app.post('/service/telegram')
-def telegram(server: str, msg: Union[str, None] = 'Ошибка!'):
-    Notification.send_to_telegram(server, msg)
+def telegram(server: str, msg: Union[str, None] = 'Ошибка!', kind: Union[str, None] = 'book'):
+    Notification.send_to_telegram(server, msg, kind)
 
 
 @app.post('/logic/normalize', response_model=List[Workers])
@@ -242,7 +279,8 @@ def normalize(url: str, data: JSONStructure = None):
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
         # Отправляем в телегу
-        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={traceback.format_exc()}')
+        requests.post(
+            f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={traceback.format_exc()}&kind=book')
         return {'status_code': 500, 'text': 'Normalize Fail!'}
 
 
@@ -260,7 +298,7 @@ def excel(url: str, year: Union[str, None] = None, staff: Union[str, None] = Non
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
         # Отправляем в телегу
-        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={msg}')
+        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={msg}&kind=book')
         return {'status_code': 500, 'text': 'Excel Fail!'}
 
 
@@ -276,7 +314,8 @@ def calc(url: str, data: List[Workers]):
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
         # Отправляем в телегу
-        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={traceback.format_exc()}')
+        requests.post(
+            f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={traceback.format_exc()}&kind=book')
         return {'status_code': 500, 'text': 'Calc Fail!'}
 
 
@@ -337,5 +376,6 @@ def database(name: str, url: str, data: List[Workers]):
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.ERROR}&message={traceback.format_exc()}')
         requests.post(f'{settings.SERVICE_REST}/service/log?level={logging.INFO}&message=STOP SCRYPT')
         # Отправляем в телегу
-        requests.post(f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={traceback.format_exc()}')
+        requests.post(
+            f'{settings.SERVICE_REST}/service/telegram?server={server}&msg={traceback.format_exc()}&kind=book')
         return {'status_code': 500, 'text': 'Database Fail!'}

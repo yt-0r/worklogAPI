@@ -12,6 +12,17 @@ class Tables:
             self.value = record['name']
 
         self.__table()
+        self.__strTable()
+
+    def __strTable(self):
+        try:
+            join_str = ' ,'.join([val['col1'] for val in self.value])
+        except TypeError:
+            join_str = ''
+        Tables.true_list.append({'id': self.id,
+                                 'var': f'str_{self.short_id}',
+                                 'name': f'{self.name}(1 колонка в виде строки)',
+                                 'value': join_str})
 
     def __table(self):
         Tables.true_list.append({'id': self.id,

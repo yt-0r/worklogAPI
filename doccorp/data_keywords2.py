@@ -1,9 +1,11 @@
+from doccorp.date_time import DateTime
 from doccorp.reference import Reference
 from doccorp.contracts import Contracts
 from doccorp.other import Components
 from doccorp.FIO_declension import PytrovichFIO
 from doccorp.position_declension import PymorphyPos
 from doccorp.sign import Sign
+from doccorp.system import System
 from doccorp.tables import Tables
 from doccorp.true_date import TrueDate
 
@@ -41,6 +43,14 @@ class DataKeywords:
 
             PytrovichFIO.true_list = []
 
+        if 'Positions' in methods:
+            for record in data['fields']['Positions']:
+                PymorphyPos(record)
+            self.true_json.append(
+                {'method': 'Positions', 'description': 'Это переменные должностей', 'var': PymorphyPos.true_list})
+
+            PymorphyPos.true_list = []
+
         if 'Dates' in methods:
             for record in data['fields']['Dates']:
                 TrueDate(record)
@@ -49,13 +59,13 @@ class DataKeywords:
 
             TrueDate.true_list = []
 
-        if 'Positions' in methods:
-            for record in data['fields']['Positions']:
-                PymorphyPos(record)
+        if 'DateTime' in methods:
+            for record in data['fields']['DateTime']:
+                DateTime(record)
             self.true_json.append(
-                {'method': 'Positions', 'description': 'Это переменные должностей', 'var': PymorphyPos.true_list})
-
-            PymorphyPos.true_list = []
+                {'method': 'DateTime', 'description': 'Это переменные даты/времени', 'var': DateTime.true_list}
+            )
+            DateTime.true_list = []
 
         if 'Components' in methods:
             for record in data['fields']['Components']:
@@ -92,18 +102,10 @@ class DataKeywords:
             )
             Tables.true_list = []
 
-        # if 'Reference' in methods:
-        #     for record in data['fields']['Reference']:
-        #         Reference(record)
+        # if 'systemfield' in methods:
+        #     for record in data['fields']['systemfield']:
+        #         System(record)
         #     self.true_json.append(
-        #         {'method': 'Reference', 'description': 'Это справка вызов', 'var': Reference.true_list}
+        #         {'method': 'systemfield', 'description': 'Это системные переменные с заявки', 'var': System.true_list}
         #     )
-        #     Reference.true_list = []
-
-        # if 'Checkbox' in methods:
-        #     for record in data['fields']['Checkbox']:
-        #         Checkbox(record)
-        #     self.true_json.append(
-        #         {'method': 'Checkbox', 'description': 'Это Checkbox', 'var': Checkbox.true_list}
-        #     )
-        #     Checkbox.true_list = []
+        #     System.true_list = []

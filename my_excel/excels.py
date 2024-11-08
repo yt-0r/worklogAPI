@@ -317,23 +317,23 @@ class Excel:
                 df_rows.loc[index, 'AS'] = f'=COUNTIF(I{count_right}:AM{count_right}, "Н")' if ins['E'][
                                                                                                    0] == 'О' else ' '
                 # тут дикая формула для командировок
-                if ins['G'] == 'К-ка':
-                    df_trip_worker = df_rows[df_rows['G'] == 'К-ка']
-                    true_formula = []
-                    for working_day in range(1, 31):
-                        temp_series = df_trip_worker[str(working_day)]
-                        coefficient = 0
-                        cell = 0
-                        for record in temp_series:
-                            if record is not None:
-                                coefficient += 1
-                                cell = f'{columns[working_day]}{count_right}'
-                        if coefficient != 0 and cell != 0:
-                            true_formula.append(f'(COUNTIF({cell}, "В")/{coefficient} + SUM({cell})/8)')
-                    df_rows.loc[index, 'AT'] = '=' + '+'.join(true_formula)
+                # if ins['G'] == 'К-ка':
+                #     df_trip_worker = df_rows[df_rows['G'] == 'К-ка']
+                #     true_formula = []
+                #     for working_day in range(1, 32):
+                #         temp_series = df_trip_worker[str(working_day)]
+                #         coefficient = 0
+                #         cell = 0
+                #         for record in temp_series:
+                #             if record is not None:
+                #                 coefficient += 1
+                #                 cell = f'{columns[working_day]}{count_right}'
+                #         if coefficient != 0 and cell != 0:
+                #             true_formula.append(f'(COUNTIF({cell}, "В")/{coefficient} + SUM({cell})/8)')
+                #     df_rows.loc[index, 'AT'] = '=' + '+'.join(true_formula)
 
-                # df_rows.loc[index, 'AT'] = (f'=COUNTIF(I{count_right}:AM{count_right}, "В") + '
-                #                             f'SUM(I{count_right}:AM{count_right})/8') if ins['G'] == 'К-ка' else ' '
+                df_rows.loc[index, 'AT'] = (f'=COUNTIF(I{count_right}:AM{count_right}, "В") + '
+                                            f'SUM(I{count_right}:AM{count_right})/8') if ins['G'] == 'К-ка' else ' '
 
                 # Кол-во отработанных часов (день)
                 df_rows.loc[index, 'AU'] = f'=SUM(I{count_right}:AM{count_right})' if ins['F'] == 'День' else ' '

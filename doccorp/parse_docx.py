@@ -36,6 +36,8 @@ class Docx:
 
             # отсекаем сюда переменные из шаблона
             vars_docx = list(set([f'customfield_{var.split("_")[-1]}' for var in vars_docx]))
+            with open('kk.json', 'w', encoding='utf-8') as file:
+                json.dump(vars_docx, file, indent=2, ensure_ascii=False)
 
             # возвращаем Женьку красивую структуру
 
@@ -67,7 +69,6 @@ class Docx:
     @staticmethod
     def __getText(filename: str):
         text = docx2txt.process(filename)
-
         matches = re.findall(r"\{\{(.*?)\}\}", text)
         matches = [s.split(' ')[-1] for s in matches]
 

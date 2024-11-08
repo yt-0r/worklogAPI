@@ -1,3 +1,4 @@
+
 class TrueDate:
     month_dict = {1: "января", 2: "февраля", 3: "марта", 4: "апреля", 5: "мая", 6: "июня", 7: "июля",
                   8: "августа", 9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"}
@@ -14,7 +15,7 @@ class TrueDate:
         if 'value' in record:
             self.date_list = record['value'].split(' ')[0].split('-') if record['value'] != 'null' else ['', '', '']
         else:
-            self.date_list = ['01', '01', '1970']
+            self.date_list = ['1970', '01', '01']
 
         self.__format_date_1()
         self.__format_date_2()
@@ -30,7 +31,7 @@ class TrueDate:
             format_date_1 = ''
 
         TrueDate.true_list.append({'id': self.id,
-                                   'var': f'format1_{self.short_id}',
+                                   'var': f'form1_{self.short_id}',
                                    'name': self.name,
                                    'value': format_date_1})
 
@@ -45,6 +46,6 @@ class TrueDate:
             format_date_2 = ''
 
         TrueDate.true_list.append({'id': self.id,
-                                   'var': f'format2_{self.short_id}',
+                                   'var': f'form2_{self.short_id}',
                                    'name': self.name,
                                    'value': format_date_2})
