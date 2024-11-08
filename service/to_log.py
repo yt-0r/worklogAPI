@@ -3,16 +3,13 @@ from config import Settings
 
 
 class Logging:
-    @staticmethod
-    def log_set(filename):
-        logging.basicConfig(filename=filename,
-                            filemode='w',
-                            format='[%(asctime)s] [%(levelname)s] => %(message)s',
-                            datefmt='%Y-%m-%d %H:%M:%S',
-                            level=logging.INFO,
-                            encoding='utf-8'
-                            )
+
+    my_loger = None
+
+    @classmethod
+    def __init__(cls, cfg):
+        cls.my_loger = logging.getLogger(cfg)
 
     @staticmethod
     def log_add(lv, message):
-        logging.log(level=lv, msg=message)
+        Logging.my_loger.log(level=lv, msg=message)
